@@ -1,69 +1,108 @@
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+  --bg: #ffffff;
+  --fg: #111111;
+  --muted: #666;
+  --panel: #f7f7f8;
+  --panel-border: #eee;
+  --ok-bg: #e6f4ea;
+  --ok-border: #ccebd6;
+  --bad-bg: #fde7e9;
+  --bad-border: #f5c2c7;
+  --brand: #111;
+  --brand-contrast: #fff;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 6px 20px rgba(0,0,0,.08);
+}
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  font-size: 14px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
+a { color: inherit; text-decoration: underline; }
+.muted { color: var(--muted); }
 
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-}
+.popup { width: 380px; padding: 12px; }
+.title { margin: 0; font-size: 18px; }
+.subtitle { margin: 4px 0 8px; color: var(--muted); }
+.row { display: flex; }
+.center { align-items: center; }
+.gap { gap: 8px; }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
+.section { margin-top: 12px; }
+.section-title { font-size: 12px; color: #555; margin-bottom: 6px; }
+.section-title.small { font-size: 12px; margin-bottom: 4px; }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  max-height: 150px;
+  overflow: auto;
+}
+.panel.code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+
+.textarea, .input, .select {
+  width: 100%;
+  font-size: 12px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid #ddd;
+  outline: none;
+}
+.textarea { height: 120px; resize: vertical; }
+
+.btn {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid #ddd;
+  background: #fff;
   cursor: pointer;
-  transition: border-color 0.25s;
 }
-button:hover {
-  border-color: #646cff;
+.btn-primary {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--brand-contrast);
 }
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+.btn-disabled {
+  background: #bbb;
+  color: #fff;
+  border-color: #aaa;
+  cursor: default;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+.badge { display: grid; grid-auto-flow: column; gap: 8px; align-items: center; }
+.badge-value {
+  width: 48px; height: 48px; border-radius: var(--radius);
+  background: var(--brand); color: var(--brand-contrast);
+  display: grid; place-items: center; font-weight: 700;
 }
+.badge-label { font-size: 12px; color: #444; }
+
+.progress { margin-top: 6px; }
+.progress-label { font-size: 11px; color: #666; margin-bottom: 4px; }
+.progress-rail { width: 100%; height: 6px; background: #eee; border-radius: 999px; }
+.progress-bar { height: 6px; background: var(--brand); border-radius: 999px; }
+
+.linkline { margin-top: 6px; font-size: 11px; }
+
+.grid { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  font-size: 11px; padding: 2px 6px; border-radius: 999px; border: 1px solid transparent;
+}
+.chip-ok { background: var(--ok-bg); border-color: var(--ok-border); }
+.chip-bad { background: var(--bad-bg); border-color: var(--bad-border); }
+
+.footline { margin-top: 8px; font-size: 11px; color: var(--muted); }
+.error { color: #b00020; margin-top: 6px; font-size: 12px; }

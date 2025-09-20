@@ -1,4 +1,3 @@
-// types/chrome-ai.d.ts
 export {};
 
 declare global {

@@ -2,10 +2,6 @@ import { defineConfig } from "wxt";
 
 export default defineConfig({
   modules: ["@wxt-dev/module-react"],
-  vite: {
-    // lock CSP early; keep popup safe
-    build: { target: "es2022" },
-  },
   manifest: {
     manifest_version: 3,
     name: "RoleAlign",
@@ -18,18 +14,19 @@ export default defineConfig({
     host_permissions: [
       "https://www.linkedin.com/*",
       "https://www.indeed.com/*",
+      ...(process.env.NODE_ENV === "development" ? ["http://localhost/*"] : []),
     ],
     // isolate content scripts; run when DOM is ready
     content_scripts: [
       {
         matches: ["https://www.linkedin.com/*/jobs/*", "https://www.linkedin.com/jobs/*"],
-        js: ["content/linkedin.content.js"],
+        js: ["linkedin.content.tsx"],
         run_at: "document_idle",
         world: "ISOLATED",
       },
       {
         matches: ["https://www.indeed.com/*"],
-        js: ["content/indeed.content.js"],
+        js: ["indeed.content.tsx"],
         run_at: "document_idle",
         world: "ISOLATED",
       },
