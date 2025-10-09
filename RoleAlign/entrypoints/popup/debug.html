@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+    <title>RoleAlign Debug</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        margin: 0;
+        padding: 16px;
+        width: 360px;
+        background: #f5f5f5;
+      }
+      .debug-section {
+        background: white;
+        padding: 12px;
+        margin-bottom: 12px;
+        border-radius: 8px;
+        border: 1px solid #ddd;
+      }
+      .debug-title {
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 8px;
+      }
+      .status {
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        margin: 2px 0;
+      }
+      .status.ok { background: #d4edda; color: #155724; }
+      .status.error { background: #f8d7da; color: #721c24; }
+      .status.warn { background: #fff3cd; color: #856404; }
+      pre {
+        background: #f8f8f8;
+        padding: 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        overflow-x: auto;
+        white-space: pre-wrap;
+      }
+      button {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 8px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin: 4px;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="debug-section">
+      <div class="debug-title">🔧 RoleAlign Debug Mode</div>
+      <div id="extension-status">Checking extension status...</div>
+    </div>
+
+    <div class="debug-section">
+      <div class="debug-title">Chrome APIs</div>
+      <div id="chrome-apis">Testing Chrome APIs...</div>
+    </div>
+
+    <div class="debug-section">
+      <div class="debug-title">React Loading</div>
+      <div id="react-status">Testing React...</div>
+      <button id="test-react" onclick="testReact()">Test React Load</button>
+    </div>
+
+    <div class="debug-section">
+      <div class="debug-title">Background Communication</div>
+      <div id="bg-status">Testing background...</div>
+      <button id="test-bg" onclick="testBackground()">Test Background</button>
+    </div>
+
+    <div class="debug-section">
+      <div class="debug-title">Error Log</div>
+      <pre id="error-log"></pre>
+      <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <div class="debug-section">
+      <div class="debug-title">Actions</div>
+      <button onclick="window.location.href='popup.html'">Load Main Popup</button>
+      <button onclick="window.location.reload()">Reload Debug</button>
+    </div>
+
+    <script>
+      let errorLog = [];
+      
+      function log(type, message, data = null) {
+        const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+        const entry = `[${timestamp}] ${type.toUpperCase()}: ${message}${data ? '\n' + JSON.stringify(data, null, 2) : ''}`;
+        errorLog.push(entry);
+        console.log(`[Debug] ${entry}`);
+        updateErrorLog();
+      }
+
+      function updateErrorLog() {
+        document.getElementById('error-log').textContent = errorLog.slice(-10).join('\n\n');
+      }
+
+      function clearLog() {
+        errorLog = [];
+        updateErrorLog();
+      }
+
+      function setStatus(elementId, status, message) {
+        const element = document.getElementById(elementId);
+        element.innerHTML = `<div class="status ${status}">${message}</div>`;
+      }
+
+      // Global error handlers
+      window.addEventListener('error', e => {
+        log('ERROR', 'Window error', { message: e.message, filename: e.filename, lineno: e.lineno });
+      });
+
+      window.addEventListener('unhandledrejection', e => {
+        log('ERROR', 'Unhandled rejection', { reason: e.reason });
+      });
+
+      // Test Chrome APIs
+      function checkChromeAPIs() {
+        try {
+          if (typeof chrome === 'undefined') {
+            setStatus('chrome-apis', 'error', 'Chrome object not available');
+            return false;
+          }
+
+          const apis = ['runtime', 'storage', 'tabs'];
+          const results = apis.map(api => {
+            const available = !!(chrome[api]);
+            return `${api}: ${available ? '✅' : '❌'}`;
+          });
+
+          setStatus('chrome-apis', 'ok', results.join('<br>'));
+          
+          // Test extension ID
+          if (chrome.runtime?.id) {
+            log('INFO', 'Extension ID', chrome.runtime.id);
+          }
+
+          return true;
+        } catch (error) {
+          setStatus('chrome-apis', 'error', 'Error checking Chrome APIs: ' + error.message);
+          log('ERROR', 'Chrome API check failed', error);
+          return false;
+        }
+      }
+
+      // Test React loading
+      async function testReact() {
+        try {
+          setStatus('react-status', 'warn', 'Loading React...');
+          log('INFO', 'Starting React test');
+
+          const React = await import('/chunks/index-BljthDwr.js');
+          log('INFO', 'React loaded', { hasReact: !!React, hasDefault: !!React.default });
+
+          const ReactDOM = await import('/chunks/client-DiYmOpj_.js');
+          log('INFO', 'ReactDOM loaded', { hasCreateRoot: !!(ReactDOM.createRoot || ReactDOM.c?.createRoot) });
+
+          setStatus('react-status', 'ok', 'React modules loaded successfully');
+        } catch (error) {
+          setStatus('react-status', 'error', 'React loading failed: ' + error.message);
+          log('ERROR', 'React test failed', error);
+        }
+      }
+
+      // Test background communication
+      async function testBackground() {
+        try {
+          setStatus('bg-status', 'warn', 'Testing background...');
+          log('INFO', 'Starting background test');
+
+          if (!chrome.runtime?.sendMessage) {
+            throw new Error('chrome.runtime.sendMessage not available');
+          }
+
+          // Try a simple ping
+          const startTime = Date.now();
+          chrome.runtime.sendMessage({ type: 'PING', payload: { test: true } }, (response) => {
+            const duration = Date.now() - startTime;
+            const error = chrome.runtime.lastError;
+            
+            if (error) {
+              setStatus('bg-status', 'error', 'Background error: ' + error.message);
+              log('ERROR', 'Background communication failed', error);
+            } else {
+              setStatus('bg-status', 'ok', `Background responded in ${duration}ms`);
+              log('INFO', 'Background test success', { response, duration });
+            }
+          });
+
+        } catch (error) {
+          setStatus('bg-status', 'error', 'Background test failed: ' + error.message);
+          log('ERROR', 'Background test failed', error);
+        }
+      }
+
+      // Check extension status
+      function checkExtensionStatus() {
+        try {
+          const manifest = chrome.runtime.getManifest();
+          const status = `
+            Name: ${manifest.name}<br>
+            Version: ${manifest.version}<br>
+            Manifest: v${manifest.manifest_version}<br>
+            ID: ${chrome.runtime.id || 'Unknown'}
+          `;
+          setStatus('extension-status', 'ok', status);
+          log('INFO', 'Extension status', manifest);
+        } catch (error) {
+          setStatus('extension-status', 'error', 'Cannot read extension status: ' + error.message);
+          log('ERROR', 'Extension status check failed', error);
+        }
+      }
+
+      // Initialize debug page
+      document.addEventListener('DOMContentLoaded', () => {
+        log('INFO', 'Debug page loaded');
+        checkExtensionStatus();
+        checkChromeAPIs();
+      });
+    </script>
+  </body>
+</html>

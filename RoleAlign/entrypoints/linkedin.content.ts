@@ -1,9 +1,8 @@
 
-import { kv } from "../src/storage/kv";
-import { AI } from "../src/ai/chrome-ai";
+import { send } from "../src/messaging/bus";
 import { Logger } from "../src/util/logger";
 
-const log = new Logger({ namespace: "cs:linkedin", level: "info", persist: false });
+const log = new Logger({ namespace: "cs:linkedin", level: "debug", persist: true });
 
 // Match both detail pages and job lists' detail panes
 const jobsPattern = new MatchPattern([
@@ -18,7 +17,7 @@ function sleep(ctx: any, ms: number) {
   });
 }
 
-/** Wait for a selector using ctx timers to avoid “context invalidated” issues */
+/** Wait for DOM elements to be ready */
 async function waitForEl(
   ctx: any,
   selector: string,
@@ -34,68 +33,103 @@ async function waitForEl(
   return null;
 }
 
-/** Extract raw job text from LinkedIn DOM (robust to minor DOM changes) */
-function extractLinkedInJob(): { title?: string; company?: string; body: string } | null {
-  const title =
-    (document.querySelector("h1")?.textContent ?? "") ||
-    (document.querySelector("[data-test-job-title]")?.textContent ?? "") ||
-    (document.querySelector(".job-details-jobs-unified-top-card__job-title")?.textContent ?? "") ||
-    undefined;
+/** Create and display match score badge */
+function createBadge(score: number): HTMLElement {
+  // Remove existing badge
+  const existing = document.querySelector("#rolealign-badge");
+  if (existing) existing.remove();
 
-  const company =
-    (document.querySelector("[data-test-company-name]")?.textContent ?? "") ||
-    (document.querySelector("a.topcard__org-name-link")?.textContent ?? "") ||
-    (document.querySelector(".job-details-jobs-unified-top-card__company-name a")?.textContent ?? "") ||
-    undefined;
+  const badge = document.createElement("div");
+  badge.id = "rolealign-badge";
+  badge.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #0073b1;
+    color: white;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    cursor: pointer;
+    z-index: 10000;
+    user-select: none;
+    transition: all 0.3s ease;
+  `;
+  
+  badge.innerHTML = `
+    <div style="text-align: center;">
+      <div style="font-size: 18px; margin-bottom: 4px;">${score}%</div>
+      <div style="font-size: 11px; opacity: 0.9;">Match Score</div>
+    </div>
+  `;
 
-  // Description containers (pick first with meaningful text)
-  const bodyEl =
-    document.querySelector(".jobs-description__container") ||
-    document.querySelector(".jobs-description-content__text") ||
-    document.querySelector("[data-test-description]") ||
-    document.querySelector("section.jobs-description") ||
-    document.querySelector("#job-details") ||
-    document.querySelector("div[class*='description']");
+  badge.addEventListener("mouseenter", () => {
+    badge.style.transform = "scale(1.05)";
+    badge.style.boxShadow = "0 6px 20px rgba(0,0,0,0.2)";
+  });
 
-  const raw = bodyEl?.textContent?.trim() ?? "";
-  const body = raw.replace(/\n{3,}/g, "\n\n"); // normalize excessive gaps
+  badge.addEventListener("mouseleave", () => {
+    badge.style.transform = "scale(1)";
+    badge.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
+  });
 
-  if (!body) return null;
-  return { title, company, body };
+  badge.addEventListener("click", () => {
+    log.info("Badge clicked - TODO: Show detailed match breakdown");
+    // TODO: Show detailed popup with matched/missing skills
+  });
+
+  document.body.appendChild(badge);
+  return badge;
 }
 
-/** Summarize + persist */
-async function summarizeAndSave(ctx: any, url: string) {
-  // Ensure there is at least *some* DOM ready
-  await waitForEl(ctx, "section, main, #job-details, .jobs-description__container", 8_000);
-
-  const job = extractLinkedInJob();
-  if (!job) {
-    log.warn("No job description found");
-    return;
-  }
-
-  const header = [job.title, job.company].filter(Boolean).join(" — ");
-  const promptText = header ? `${header}\n\n${job.body}` : job.body;
-
+/** Analyze job page and show score */
+async function analyzeJobPage(ctx: any, url: string) {
   try {
-    const md = await AI.Summarize.jobRequirements(promptText, {
-      onDownloadProgress: (p) => log.debug("Summarizer download", { p }),
-      type: "key-points",
-      format: "markdown",
-      length: "short",
-      timeoutMs: 12_000,
+    // Wait for job content to load
+    await waitForEl(ctx, "section, main, #job-details, .jobs-description__container", 8_000);
+
+    log.info("Analyzing LinkedIn job page", { url });
+
+    // Send job analysis request to background
+    const result = await send("content", "ANALYZE_JOB", {
+      site: "linkedin",
+      url: url
+    }, { 
+      timeoutMs: 30_000 
     });
 
-    await kv.set("lastJobSummary", {
-      site: "LinkedIn",
-      url,
-      markdown: md,
+    log.info("Job analysis completed", { 
+      title: result.job?.title, 
+      company: result.job?.company 
     });
 
-    log.info("Saved lastJobSummary", { len: md.length, url });
+    // Get stored CV for scoring
+    const cvResult = await send("content", "GET_CV", {}, { timeoutMs: 5_000 });
+    
+    if (!cvResult.cv) {
+      log.warn("No CV found - user needs to upload CV first");
+      return;
+    }
+
+    // Compute match score
+    const scoreResult = await send("content", "SCORE_MATCH", {
+      cv: cvResult.cv,
+      job: result.job,
+      useAI: true
+    }, { 
+      timeoutMs: 20_000 
+    });
+
+    log.info("Match score computed", { score: scoreResult.score });
+
+    // Display badge with score
+    createBadge(scoreResult.score);
+
   } catch (e: any) {
-    log.error("Summarize failed", { error: e?.message ?? String(e) });
+    log.error("Job analysis failed", { error: e?.message ?? String(e) });
   }
 }
 
@@ -105,7 +139,6 @@ export default defineContentScript({
   runAt: "document_idle",
   world: "ISOLATED",
   registration: "manifest",
-  // If you later add content CSS for a UI, set cssInjectionMode: "ui" and import the CSS.
 
   async main(ctx) {
     const url = location.href;
@@ -113,7 +146,7 @@ export default defineContentScript({
     // Initial mount (full reload / first load)
     if (jobsPattern.includes(url)) {
       log.info("LinkedIn job URL detected (initial)", { url });
-      await summarizeAndSave(ctx, url);
+      analyzeJobPage(ctx, url);
     } else {
       log.debug("Non-job LinkedIn page", { url });
     }
@@ -123,10 +156,16 @@ export default defineContentScript({
       // Using the pattern is safer than string includes
       if (jobsPattern.includes(newUrl)) {
         log.info("LinkedIn job URL detected (SPA nav)", { newUrl });
-        // Fire and forget; ctx keeps timers scoped
-        summarizeAndSave(ctx, newUrl);
+        // Remove any existing badge when navigating to new job
+        const existing = document.querySelector("#rolealign-badge");
+        if (existing) existing.remove();
+        // Analyze new job page
+        analyzeJobPage(ctx, newUrl);
       } else {
         log.debug("Navigated to non-job page", { newUrl });
+        // Remove badge when leaving job pages
+        const existing = document.querySelector("#rolealign-badge");
+        if (existing) existing.remove();
       }
     });
   },

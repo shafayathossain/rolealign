@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Complete Chrome AI Diagnostics</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; }
+        .status { padding: 10px; margin: 5px 0; border-radius: 5px; }
+        .success { background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .warning { background-color: #fff3cd; border: 1px solid #ffeaa7; color: #856404; }
+        .info { background-color: #cce7ff; border: 1px solid #99d3ff; color: #004085; }
+        button { padding: 10px 15px; margin: 5px; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 5px; overflow-x: auto; }
+        .test-section { border: 1px solid #ddd; margin: 10px 0; padding: 15px; border-radius: 8px; }
+        h3 { margin-top: 0; }
+    </style>
+</head>
+<body>
+    <h1>🔬 Complete Chrome AI Diagnostics</h1>
+    <p>This page performs comprehensive testing to diagnose AI API availability issues.</p>
+    
+    <div id="results"></div>
+    
+    <button onclick="runAllTests()">🚀 Run All Diagnostics</button>
+    <button onclick="clearResults()">🧹 Clear Results</button>
+    
+    <script>
+        const results = document.getElementById('results');
+        
+        function log(message, type = 'info', section = 'general') {
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = `<strong>[${section.toUpperCase()}]</strong> ${message}`;
+            results.appendChild(div);
+            console.log(`[${section}] ${message}`);
+        }
+        
+        function clearResults() {
+            results.innerHTML = '';
+        }
+        
+        function createSection(title) {
+            const section = document.createElement('div');
+            section.className = 'test-section';
+            section.innerHTML = `<h3>${title}</h3>`;
+            results.appendChild(section);
+            return section;
+        }
+        
+        async function runAllTests() {
+            clearResults();
+            log('Starting comprehensive Chrome AI diagnostics...', 'info', 'init');
+            
+            // Test 1: Basic Environment
+            await testBasicEnvironment();
+            
+            // Test 2: Chrome Version  
+            await testChromeVersion();
+            
+            // Test 3: AI Object Detection
+            await testAIObjectDetection();
+            
+            // Test 4: Individual API Testing
+            await testIndividualAPIs();
+            
+            // Test 5: Extension Context
+            await testExtensionContext();
+            
+            // Test 6: Recommendations
+            await provideRecommendations();
+        }
+        
+        async function testBasicEnvironment() {
+            const section = createSection('🌍 Basic Environment');
+            
+            log('User Agent: ' + navigator.userAgent, 'info', 'env');
+            log('Platform: ' + navigator.platform, 'info', 'env');
+            log('Language: ' + navigator.language, 'info', 'env');
+            log('Online: ' + navigator.onLine, 'info', 'env');
+            log('Cookies enabled: ' + navigator.cookieEnabled, 'info', 'env');
+            
+            // Check if we're in extension context
+            const isExtension = !!chrome?.runtime?.id;
+            log('Extension context: ' + isExtension, isExtension ? 'success' : 'warning', 'env');
+            
+            if (isExtension) {
+                log('Extension ID: ' + chrome.runtime.id, 'info', 'env');
+            }
+        }
+        
+        async function testChromeVersion() {
+            const section = createSection('🔢 Chrome Version Check');
+            
+            const userAgent = navigator.userAgent;
+            const chromeMatch = userAgent.match(/Chrome\/(\d+)/);
+            
+            if (chromeMatch) {
+                const version = parseInt(chromeMatch[1]);
+                log(`Chrome Version: ${version}`, 'info', 'version');
+                
+                // AI APIs are available from Chrome 137+
+                if (version >= 137) {
+                    log('✅ Chrome version supports AI APIs (137+)', 'success', 'version');
+                } else {
+                    log(`❌ Chrome version ${version} is too old. AI APIs require Chrome 137+`, 'error', 'version');
+                    log('💡 Please update Chrome to latest version', 'warning', 'version');
+                }
+            } else {
+                log('❌ Could not detect Chrome version', 'error', 'version');
+            }
+        }
+        
+        async function testAIObjectDetection() {
+            const section = createSection('🤖 AI Object Detection');
+            
+            // Test globalThis.ai
+            const globalAI = globalThis.ai;
+            log('globalThis.ai exists: ' + !!globalAI, !!globalAI ? 'success' : 'error', 'ai-detect');
+            
+            // Test window.ai  
+            const windowAI = window.ai;
+            log('window.ai exists: ' + !!windowAI, !!windowAI ? 'success' : 'error', 'ai-detect');
+            
+            const ai = globalAI || windowAI;
+            
+            if (!ai) {
+                log('❌ No AI object found anywhere', 'error', 'ai-detect');
+                log('💡 This usually means Chrome flags are not properly enabled', 'warning', 'ai-detect');
+                return false;
+            }
+            
+            log('✅ AI object found!', 'success', 'ai-detect');
+            
+            // Check AI object properties
+            const props = Object.getOwnPropertyNames(ai);
+            log('AI object properties: ' + props.join(', '), 'info', 'ai-detect');
+            
+            return true;
+        }
+        
+        async function testIndividualAPIs() {
+            const section = createSection('🧪 Individual API Testing');
+            
+            const ai = globalThis.ai || window.ai;
+            
+            if (!ai) {
+                log('❌ Skipping API tests - no AI object available', 'error', 'api-test');
+                return;
+            }
+            
+            // Test Language Model (Prompt API)
+            if (ai.languageModel) {
+                log('✅ languageModel API exists', 'success', 'api-test');
+                try {
+                    const capabilities = await ai.languageModel.canCreate();
+                    log('Language Model capabilities: ' + JSON.stringify(capabilities), 'info', 'api-test');
+                    
+                    if (capabilities.available === 'readily') {
+                        log('🚀 Attempting to create language model session...', 'info', 'api-test');
+                        const session = await ai.languageModel.create();
+                        log('✅ Language model session created successfully!', 'success', 'api-test');
+                        
+                        const response = await session.prompt('Say "Hello from Chrome AI!"');
+                        log('🤖 AI Response: ' + response, 'success', 'api-test');
+                    } else if (capabilities.available === 'after-download') {
+                        log('⏳ Language model available after download', 'warning', 'api-test');
+                    } else {
+                        log('❌ Language model not available: ' + capabilities.available, 'error', 'api-test');
+                    }
+                } catch (e) {
+                    log('❌ Language Model test failed: ' + e.message, 'error', 'api-test');
+                }
+            } else {
+                log('❌ languageModel API not found', 'error', 'api-test');
+            }
+            
+            // Test Summarizer API
+            if (ai.summarizer) {
+                log('✅ summarizer API exists', 'success', 'api-test');
+                try {
+                    const capabilities = await ai.summarizer.canCreate();
+                    log('Summarizer capabilities: ' + JSON.stringify(capabilities), 'info', 'api-test');
+                } catch (e) {
+                    log('❌ Summarizer test failed: ' + e.message, 'error', 'api-test');
+                }
+            } else {
+                log('❌ summarizer API not found', 'error', 'api-test');
+            }
+            
+            // Test Translator API
+            if (ai.translator) {
+                log('✅ translator API exists', 'success', 'api-test');
+                try {
+                    const capabilities = await ai.translator.canCreate({ source: 'en', target: 'es' });
+                    log('Translator capabilities: ' + JSON.stringify(capabilities), 'info', 'api-test');
+                } catch (e) {
+                    log('❌ Translator test failed: ' + e.message, 'error', 'api-test');
+                }
+            } else {
+                log('❌ translator API not found', 'error', 'api-test');
+            }
+        }
+        
+        async function testExtensionContext() {
+            const section = createSection('🔌 Extension Context Testing');
+            
+            if (!chrome?.runtime?.id) {
+                log('ℹ️ Not running in extension context', 'info', 'extension');
+                return;
+            }
+            
+            log('Running in extension context', 'info', 'extension');
+            
+            // Test if we can access AI from extension context
+            const ai = globalThis.ai || window.ai;
+            if (ai) {
+                log('✅ AI APIs accessible from extension context', 'success', 'extension');
+            } else {
+                log('❌ AI APIs NOT accessible from extension context', 'error', 'extension');
+                log('💡 This might be the issue - try testing from a regular webpage', 'warning', 'extension');
+            }
+        }
+        
+        async function provideRecommendations() {
+            const section = createSection('💡 Recommendations');
+            
+            const ai = globalThis.ai || window.ai;
+            
+            if (!ai) {
+                log('🔧 ISSUE: No AI object found', 'error', 'recommendations');
+                log('1. Check chrome://flags and ensure these are ENABLED:', 'warning', 'recommendations');
+                log('   • Prompt API for Gemini Nano', 'info', 'recommendations');
+                log('   • Summarization API for Gemini Nano', 'info', 'recommendations');  
+                log('   • Translation API', 'info', 'recommendations');
+                log('2. Restart Chrome completely after enabling flags', 'warning', 'recommendations');
+                log('3. Ensure you have Chrome 137+ or Chrome Canary', 'warning', 'recommendations');
+                log('4. Try testing on a regular webpage (not extension page)', 'warning', 'recommendations');
+                log('5. Check if your device supports on-device AI models', 'warning', 'recommendations');
+            } else {
+                log('✅ AI APIs are working! Issue might be extension-specific', 'success', 'recommendations');
+                log('1. Check extension manifest permissions', 'info', 'recommendations');
+                log('2. Verify AI detection code in background script', 'info', 'recommendations');
+                log('3. Try injecting AI test into content script context', 'info', 'recommendations');
+            }
+            
+            log('📋 Next debugging steps:', 'info', 'recommendations');
+            log('• Test this page in regular Chrome tab (not extension)', 'info', 'recommendations');
+            log('• Check browser console for additional errors', 'info', 'recommendations');
+            log('• Verify Local State file has correct flags', 'info', 'recommendations');
+        }
+        
+        // Auto-run on page load
+        window.addEventListener('load', runAllTests);
+    </script>
+</body>
+</html>

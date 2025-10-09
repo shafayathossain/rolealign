@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chrome AI APIs Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .status { padding: 10px; margin: 5px 0; border-radius: 5px; }
+        .available { background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .unavailable { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .testing { background-color: #fff3cd; border: 1px solid #ffeaa7; color: #856404; }
+        button { padding: 10px 15px; margin: 5px; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Chrome AI APIs Debug Page</h1>
+    <p>This page tests if Chrome's built-in AI APIs are available and working.</p>
+    
+    <div id="results"></div>
+    
+    <button onclick="testAI()">Test AI APIs</button>
+    <button onclick="testPrompt()">Test Prompt API</button>
+    
+    <script>
+        const results = document.getElementById('results');
+        
+        function log(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = message;
+            results.appendChild(div);
+        }
+        
+        async function testAI() {
+            results.innerHTML = '';
+            log('Testing Chrome AI APIs...', 'testing');
+            
+            // Test if AI object exists
+            const ai = globalThis.ai || window.ai;
+            if (!ai) {
+                log('❌ AI object not found - Chrome AI APIs not available', 'unavailable');
+                return;
+            }
+            
+            log('✅ AI object found', 'available');
+            
+            // Test each API
+            const apis = ['languageModel', 'summarizer', 'translator'];
+            for (const api of apis) {
+                if (ai[api]) {
+                    log(`✅ ${api} API available`, 'available');
+                    try {
+                        const capabilities = await ai[api].canCreate();
+                        log(`📊 ${api} capabilities: ${JSON.stringify(capabilities)}`, 'info');
+                    } catch (e) {
+                        log(`⚠️ ${api} capabilities check failed: ${e.message}`, 'unavailable');
+                    }
+                } else {
+                    log(`❌ ${api} API not available`, 'unavailable');
+                }
+            }
+        }
+        
+        async function testPrompt() {
+            results.innerHTML = '';
+            log('Testing Prompt API specifically...', 'testing');
+            
+            const ai = globalThis.ai || window.ai;
+            if (!ai || !ai.languageModel) {
+                log('❌ Language Model API not available', 'unavailable');
+                return;
+            }
+            
+            try {
+                const capabilities = await ai.languageModel.canCreate();
+                log(`Language Model capabilities: ${JSON.stringify(capabilities, null, 2)}`, 'info');
+                
+                if (capabilities.available === 'readily') {
+                    log('✅ Creating language model session...', 'testing');
+                    const session = await ai.languageModel.create();
+                    log('✅ Language model session created successfully!', 'available');
+                    
+                    log('🧪 Testing simple prompt...', 'testing');
+                    const response = await session.prompt('Hello! Can you confirm you are working?');
+                    log(`Response: ${response}`, 'available');
+                    
+                } else if (capabilities.available === 'after-download') {
+                    log('⏳ Language model will be available after download', 'testing');
+                } else {
+                    log('❌ Language model not available on this device', 'unavailable');
+                }
+            } catch (e) {
+                log(`❌ Error testing Prompt API: ${e.message}`, 'unavailable');
+                console.error('Full error:', e);
+            }
+        }
+        
+        // Auto-run test on page load
+        window.addEventListener('load', testAI);
+    </script>
+</body>
+</html>

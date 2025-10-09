@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RoleAlign Debug - Popup Issues</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    .test-section {
+      background: #f5f5f5;
+      padding: 15px;
+      margin: 10px 0;
+      border-radius: 8px;
+      border-left: 4px solid #007acc;
+    }
+    .success {
+      border-left-color: #28a745;
+      background: #d4edda;
+    }
+    .error {
+      border-left-color: #dc3545;
+      background: #f8d7da;
+    }
+    .warning {
+      border-left-color: #ffc107;
+      background: #fff3cd;
+    }
+    button {
+      background: #007acc;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    button:hover {
+      background: #005999;
+    }
+    button:disabled {
+      background: #6c757d;
+      cursor: not-allowed;
+    }
+    pre {
+      background: #f8f9fa;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+    .status {
+      font-weight: bold;
+      display: inline-block;
+      min-width: 80px;
+    }
+    .status.ok { color: #28a745; }
+    .status.fail { color: #dc3545; }
+    .status.warn { color: #ffc107; }
+  </style>
+</head>
+<body>
+  <h1>🔧 RoleAlign Extension Debug</h1>
+  <p>This page helps diagnose why the RoleAlign popup shows "Still not loading".</p>
+
+  <div class="test-section">
+    <h2>🔍 Quick Diagnosis</h2>
+    <button onclick="runAllTests()">Run All Tests</button>
+    <button onclick="clearLogs()">Clear Logs</button>
+    <div id="quick-results"></div>
+  </div>
+
+  <div class="test-section">
+    <h2>📋 Test Results</h2>
+    <div id="test-results"></div>
+  </div>
+
+  <div class="test-section">
+    <h2>📝 Debug Logs</h2>
+    <pre id="debug-logs"></pre>
+  </div>
+
+  <div class="test-section">
+    <h2>🛠️ Manual Tests</h2>
+    <button onclick="testExtensionAPIs()">Test Extension APIs</button>
+    <button onclick="testBackgroundScript()">Test Background Script</button>
+    <button onclick="testAIAPIs()">Test AI APIs</button>
+    <button onclick="testStorage()">Test Storage</button>
+    <button onclick="testActiveTab()">Test Active Tab</button>
+    <button onclick="testPopupState()">Test Popup State</button>
+  </div>
+
+  <script>
+    let logs = [];
+
+    function log(message, type = 'info') {
+      const timestamp = new Date().toISOString();
+      const logEntry = `[${timestamp}] ${type.toUpperCase()}: ${message}`;
+      logs.push(logEntry);
+      updateLogs();
+      console.log(logEntry);
+    }
+
+    function updateLogs() {
+      document.getElementById('debug-logs').textContent = logs.join('\n');
+    }
+
+    function clearLogs() {
+      logs = [];
+      updateLogs();
+      document.getElementById('test-results').innerHTML = '';
+      document.getElementById('quick-results').innerHTML = '';
+    }
+
+    function addResult(test, status, details = '') {
+      const resultsDiv = document.getElementById('test-results');
+      const statusClass = status === 'PASS' ? 'ok' : status === 'FAIL' ? 'fail' : 'warn';
+      resultsDiv.innerHTML += `
+        <div style="margin: 5px 0;">
+          <span class="status ${statusClass}">${status}</span> ${test}
+          ${details ? `<br><small style="color: #666; margin-left: 90px;">${details}</small>` : ''}
+        </div>
+      `;
+    }
+
+    async function testExtensionAPIs() {
+      log('Testing Chrome Extension APIs...');
+      
+      try {
+        // Test chrome object
+        if (typeof chrome === 'undefined') {
+          addResult('Chrome API', 'FAIL', 'chrome object not available');
+          return false;
+        }
+        addResult('Chrome API', 'PASS', 'chrome object available');
+
+        // Test runtime
+        if (!chrome.runtime) {
+          addResult('Chrome Runtime', 'FAIL', 'chrome.runtime not available');
+          return false;
+        }
+        addResult('Chrome Runtime', 'PASS', `ID: ${chrome.runtime.id}`);
+
+        // Test sendMessage
+        if (typeof chrome.runtime.sendMessage !== 'function') {
+          addResult('Message API', 'FAIL', 'chrome.runtime.sendMessage not available');
+          return false;
+        }
+        addResult('Message API', 'PASS', 'sendMessage function available');
+
+        return true;
+      } catch (error) {
+        log(`Extension API test failed: ${error.message}`, 'error');
+        addResult('Extension APIs', 'FAIL', error.message);
+        return false;
+      }
+    }
+
+    async function testBackgroundScript() {
+      log('Testing background script communication...');
+      
+      try {
+        const response = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error('Timeout')), 5000);
+          
+          chrome.runtime.sendMessage({
+            v: 1,
+            id: 'debug-test',
+            from: 'debug',
+            to: 'background',
+            type: 'PING',
+            payload: { t: Date.now() }
+          }, (response) => {
+            clearTimeout(timeout);
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+            } else {
+              resolve(response);
+            }
+          });
+        });
+
+        if (response && response.ok) {
+          addResult('Background Script', 'PASS', `PING successful: ${JSON.stringify(response.result)}`);
+          return true;
+        } else {
+          addResult('Background Script', 'FAIL', `Invalid response: ${JSON.stringify(response)}`);
+          return false;
+        }
+      } catch (error) {
+        log(`Background script test failed: ${error.message}`, 'error');
+        addResult('Background Script', 'FAIL', error.message);
+        return false;
+      }
+    }
+
+    async function testAIAPIs() {
+      log('Testing Chrome AI APIs...');
+      
+      try {
+        if (typeof globalThis.ai === 'undefined') {
+          addResult('AI APIs', 'FAIL', 'globalThis.ai not available - check Chrome flags');
+          return false;
+        }
+
+        if (!globalThis.ai.languageModel) {
+          addResult('AI Language Model', 'FAIL', 'ai.languageModel not available');
+          return false;
+        }
+
+        addResult('AI APIs', 'PASS', `AI available: ${Object.keys(globalThis.ai).join(', ')}`);
+        
+        // Test capabilities
+        try {
+          const availability = await globalThis.ai.languageModel.capabilities();
+          addResult('AI Capabilities', 'PASS', `Available: ${availability.available}`);
+        } catch (error) {
+          addResult('AI Capabilities', 'WARN', `Could not check capabilities: ${error.message}`);
+        }
+
+        return true;
+      } catch (error) {
+        log(`AI API test failed: ${error.message}`, 'error');
+        addResult('AI APIs', 'FAIL', error.message);
+        return false;
+      }
+    }
+
+    async function testStorage() {
+      log('Testing Chrome Storage...');
+      
+      try {
+        // Test setting a value
+        await new Promise((resolve, reject) => {
+          chrome.storage.local.set({ debugTest: 'working' }, () => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+            } else {
+              resolve();
+            }
+          });
+        });
+
+        // Test getting the value
+        const result = await new Promise((resolve, reject) => {
+          chrome.storage.local.get(['debugTest'], (result) => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+            } else {
+              resolve(result);
+            }
+          });
+        });
+
+        if (result.debugTest === 'working') {
+          addResult('Storage', 'PASS', 'Read/write operations successful');
+          
+          // Clean up
+          chrome.storage.local.remove(['debugTest']);
+          return true;
+        } else {
+          addResult('Storage', 'FAIL', 'Could not read back test value');
+          return false;
+        }
+      } catch (error) {
+        log(`Storage test failed: ${error.message}`, 'error');
+        addResult('Storage', 'FAIL', error.message);
+        return false;
+      }
+    }
+
+    async function testActiveTab() {
+      log('Testing Active Tab access...');
+      
+      try {
+        const tabs = await new Promise((resolve, reject) => {
+          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+            } else {
+              resolve(tabs);
+            }
+          });
+        });
+
+        if (tabs && tabs.length > 0) {
+          const tab = tabs[0];
+          addResult('Active Tab', 'PASS', `Tab: ${tab.title} (${tab.url})`);
+          return true;
+        } else {
+          addResult('Active Tab', 'FAIL', 'No active tab found');
+          return false;
+        }
+      } catch (error) {
+        log(`Active tab test failed: ${error.message}`, 'error');
+        addResult('Active Tab', 'FAIL', error.message);
+        return false;
+      }
+    }
+
+    async function testPopupState() {
+      log('Testing popup environment...');
+      
+      try {
+        const info = {
+          location: window.location.href,
+          origin: window.location.origin,
+          protocol: window.location.protocol,
+          isExtension: window.location.protocol === 'chrome-extension:',
+          hasExtensionId: /^chrome-extension:\/\/[a-z]+\//.test(window.location.href),
+          userAgent: navigator.userAgent.includes('Chrome'),
+          documentReady: document.readyState
+        };
+
+        let status = 'PASS';
+        let details = [];
+
+        if (!info.isExtension) {
+          status = 'WARN';
+          details.push('Not running in extension context');
+        }
+
+        if (!info.hasExtensionId) {
+          status = 'WARN';
+          details.push('Invalid extension URL format');
+        }
+
+        if (info.documentReady !== 'complete') {
+          status = 'WARN';
+          details.push('Document not fully loaded');
+        }
+
+        addResult('Popup Environment', status, details.join('; ') || JSON.stringify(info, null, 2));
+        return status === 'PASS';
+      } catch (error) {
+        log(`Popup state test failed: ${error.message}`, 'error');
+        addResult('Popup Environment', 'FAIL', error.message);
+        return false;
+      }
+    }
+
+    async function runAllTests() {
+      log('Starting comprehensive test suite...');
+      document.getElementById('test-results').innerHTML = '';
+      
+      const tests = [
+        { name: 'Extension APIs', fn: testExtensionAPIs },
+        { name: 'Background Script', fn: testBackgroundScript },
+        { name: 'AI APIs', fn: testAIAPIs },
+        { name: 'Storage', fn: testStorage },
+        { name: 'Active Tab', fn: testActiveTab },
+        { name: 'Popup Environment', fn: testPopupState }
+      ];
+
+      let passed = 0;
+      let failed = 0;
+
+      for (const test of tests) {
+        try {
+          const result = await test.fn();
+          if (result) passed++;
+          else failed++;
+        } catch (error) {
+          failed++;
+          log(`Test ${test.name} threw error: ${error.message}`, 'error');
+        }
+        
+        // Small delay between tests
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      const summary = `Tests completed: ${passed} passed, ${failed} failed`;
+      log(summary);
+      
+      const quickDiv = document.getElementById('quick-results');
+      const summaryClass = failed === 0 ? 'success' : (passed > 0 ? 'warning' : 'error');
+      quickDiv.innerHTML = `<div class="${summaryClass}" style="margin-top: 10px; padding: 10px; border-radius: 4px;">
+        <strong>${summary}</strong><br>
+        ${failed === 0 ? '✅ All tests passed! Extension should be working.' : 
+          passed > 0 ? '⚠️ Some issues detected. Check individual test results.' : 
+          '❌ Multiple failures detected. Extension may not be working properly.'}
+      </div>`;
+    }
+
+    // Auto-run basic checks on page load
+    window.addEventListener('load', () => {
+      log('Debug page loaded');
+      setTimeout(() => {
+        testExtensionAPIs();
+        testPopupState();
+      }, 500);
+    });
+  </script>
+</body>
+</html>

@@ -1,9 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RoleAlign - Opening...</title>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>RoleAlign - Redirecting...</title>
     <style>
         body {
             margin: 0;
@@ -33,12 +32,30 @@
             100% { transform: rotate(360deg); }
         }
     </style>
-  </head>
-  <body>
+</head>
+<body>
     <div class="spinner"></div>
     <h3>Opening RoleAlign...</h3>
     <p>Redirecting to full interface</p>
     
-    <script type="module" src="./redirect.ts"></script>
-  </body>
+    <script>
+        // Immediately open the full interface in a new tab
+        chrome.tabs.create({
+            url: chrome.runtime.getURL('interface.html'),
+            active: true
+        }).then(() => {
+            // Close this popup
+            window.close();
+        }).catch(error => {
+            console.error('Failed to open interface:', error);
+            document.body.innerHTML = `
+                <div style="padding: 20px; text-align: center;">
+                    <h3>❌ Error</h3>
+                    <p>Could not open interface</p>
+                    <button onclick="window.close()" style="padding: 8px 16px; background: white; color: #667eea; border: none; border-radius: 4px; cursor: pointer;">Close</button>
+                </div>
+            `;
+        });
+    </script>
+</body>
 </html>

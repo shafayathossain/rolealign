@@ -94,7 +94,7 @@ export interface JobNormalized {
 }
 
 /** Result contract for adapters. */
-export interface ParseJobResult {
+export type ParseJobResult = {
   ok: true;
   job: JobNormalized;
 } | {

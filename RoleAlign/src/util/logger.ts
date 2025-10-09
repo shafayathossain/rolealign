@@ -37,7 +37,7 @@ export class Logger {
 
   constructor(opts: LoggerOptions = {}) {
     this.ns = opts.namespace ?? "default";
-    this.level = opts.level ?? (process.env.NODE_ENV === "development" ? "debug" : "info");
+    this.level = opts.level ?? (import.meta.env.DEV ? "debug" : "info");
     this.persist = opts.persist ?? false;
     this.maxPersisted = opts.maxPersisted ?? 200;
   }

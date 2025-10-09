@@ -2,35 +2,28 @@ import { defineConfig } from "wxt";
 
 export default defineConfig({
   modules: ["@wxt-dev/module-react"],
+  entrypointsDir: "entrypoints",
   manifest: {
     manifest_version: 3,
     name: "RoleAlign",
     version: "0.1.0",
     description: "AI-powered CV tailoring and job matching, all on-device.",
-    action: { default_popup: "popup.html" },
-    // keep permissions minimal
-    permissions: ["storage", "activeTab"],
-    // host permissions only for sites you actually parse
+    action: { 
+      default_popup: "popup/redirect.html",
+      default_title: "RoleAlign - AI CV Tailoring"
+    },
+
+    // minimal permissions
+    permissions: ["storage", "activeTab", "scripting"],
+
+    // host permissions only for sites you parse
     host_permissions: [
       "https://www.linkedin.com/*",
       "https://www.indeed.com/*",
       ...(process.env.NODE_ENV === "development" ? ["http://localhost/*"] : []),
     ],
-    // isolate content scripts; run when DOM is ready
-    content_scripts: [
-      {
-        matches: ["https://www.linkedin.com/*/jobs/*", "https://www.linkedin.com/jobs/*"],
-        js: ["linkedin.content.tsx"],
-        run_at: "document_idle",
-        world: "ISOLATED",
-      },
-      {
-        matches: ["https://www.indeed.com/*"],
-        js: ["indeed.content.tsx"],
-        run_at: "document_idle",
-        world: "ISOLATED",
-      },
-    ],
+
+    // content scripts are auto-detected from entrypoints/
     icons: {
       "16": "icon/16.png",
       "32": "icon/32.png",
@@ -38,9 +31,43 @@ export default defineConfig({
       "96": "icon/96.png",
       "128": "icon/128.png",
     },
-    // lock down CSP (adjust if you add external fonts etc.)
+
+    // strict CSP for extension pages with better React compatibility
     content_security_policy: {
-      extension_pages: "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline';",
+      extension_pages:
+        "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline';",
     },
+
+    // allow chunks/assets for extension pages
+    web_accessible_resources: [
+      {
+        resources: ["assets/*", "chunks/*", "pdf.worker.*"],
+        matches: ["<all_urls>"],
+      },
+    ],
+  },
+
+  // WXT v0.20 expects this to be a function
+  vite() {
+    return {
+      build: {
+        // ✅ Vite 7+ option name
+        modulePreload: { polyfill: false },
+        sourcemap: true,
+        target: "chrome120",
+        // Let WXT handle chunking strategy
+      },
+      worker: {
+        format: "es",
+      },
+      define: {
+        "process.env.NODE_ENV": JSON.stringify(
+          process.env.NODE_ENV || "development"
+        ),
+      },
+      optimizeDeps: {
+        include: ['react', 'react-dom'],
+      },
+    };
   },
 });

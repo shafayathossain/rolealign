@@ -33,6 +33,7 @@ export type Kind =
   | "PING"
   | "GET_VERSION"
   | "EXTRACT_CV"
+  | "PROCESS_CV_SECTIONS"
   | "SAVE_CV"
   | "GET_CV"
   | "ANALYZE_JOB"         // parse job page → normalized job data
@@ -81,11 +82,22 @@ export type GetVersionRes = BaseRes<"GET_VERSION", { version: string }>;
 export type ExtractCvReq = BaseReq<"EXTRACT_CV", { raw: string }>;
 export type ExtractCvRes = BaseRes<"EXTRACT_CV", { cv: unknown }>;
 
+export type ProcessCvSectionsReq = BaseReq<"PROCESS_CV_SECTIONS", { 
+  sections: {
+    personalInfo: string;
+    experience: string;
+    education: string;
+    skills: string;
+    projects: string;
+  }
+}>;
+export type ProcessCvSectionsRes = BaseRes<"PROCESS_CV_SECTIONS", { cv: unknown }>;
+
 export type SaveCvReq = BaseReq<"SAVE_CV", { cv: unknown }>;
 export type SaveCvRes = BaseRes<"SAVE_CV", { saved: true }>;
 
-export type GetCvReq = BaseReq<"GET_CV", {}>;
-export type GetCvRes = BaseRes<"GET_CV", { cv: unknown | null }>;
+export type GetCvReq = BaseReq<"GET_CV", { email?: string }>;
+export type GetCvRes = BaseRes<"GET_CV", { cv: unknown | null; source?: string }>;
 
 export type AnalyzeJobReq = BaseReq<
   "ANALYZE_JOB",
@@ -122,6 +134,7 @@ export type AnyReq =
   | PingReq
   | GetVersionReq
   | ExtractCvReq
+  | ProcessCvSectionsReq
   | SaveCvReq
   | GetCvReq
   | AnalyzeJobReq
@@ -134,6 +147,7 @@ export type AnyRes =
   | PingRes
   | GetVersionRes
   | ExtractCvRes
+  | ProcessCvSectionsRes
   | SaveCvRes
   | GetCvRes
   | AnalyzeJobRes

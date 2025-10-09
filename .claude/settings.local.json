@@ -1,5 +1,9 @@
 {
   "permissions": {
+    "allow": [
+      "Bash(pnpm dev:*)",
+      "Bash(chmod:*)"
+    ],
     "defaultMode": "acceptEdits"
   }
 }

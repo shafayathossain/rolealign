@@ -1,8 +1,68 @@
-# WXT + React
+# RoleAlign — AI-powered CV ↔ Job Match Extension
 
-This template should help get you started developing with React in WXT.
+One-time CV upload → continuous, private, on-page match scoring → one-click tailored CV generation.
 
-File-tree:
+## 🚀 Quick Start
+
+### Prerequisites
+- Node.js 18+ 
+- pnpm (recommended) or npm
+- Chrome browser with AI flags enabled
+
+### Installation & Development
+
+```bash
+# 1. Install dependencies
+pnpm install
+
+# 2. Start development server
+pnpm dev
+
+# 3. Open Chrome to load the extension
+# The browser will open automatically with the extension loaded
+```
+
+### Production Build
+
+```bash
+# Build for Chrome Web Store
+pnpm build
+pnpm zip
+
+# Build for Firefox
+pnpm build:firefox
+pnpm zip:firefox
+```
+
+### Enable Chrome AI APIs (Required)
+
+RoleAlign uses Chrome's built-in AI APIs. Enable these flags:
+
+1. **Open Chrome flags:**
+   - `chrome://flags/#prompt-api-for-gemini-nano` → **Enabled**
+   - `chrome://flags/#summarization-api-for-gemini-nano` → **Enabled**
+   - `chrome://flags/#translation-api` → **Enabled**
+
+2. **Restart Chrome completely**
+
+3. **Test AI availability** (optional):
+   ```javascript
+   // In Chrome DevTools console
+   console.log('AI available:', !!globalThis.ai?.languageModel);
+   await globalThis.ai?.languageModel?.canCreate();
+   ```
+
+### Development Commands
+
+| Command | Description |
+|---------|-------------|
+| `pnpm dev` | Start development with live reload |
+| `pnpm dev:firefox` | Start development for Firefox |
+| `pnpm build` | Create production build |
+| `pnpm compile` | Type check without emitting |
+| `pnpm zip` | Package for Chrome Web Store |
+
+### File Structure:
 
 RoleAlign/
 ├─ entrypoints/
@@ -40,7 +100,29 @@ RoleAlign/
 ├─ tsconfig.json
 └─ .gitignore
 
+## 🧪 Testing the Extension
 
+1. **Load extension in Chrome:**
+   - Extension auto-loads during `pnpm dev`
+   - Or manually: Chrome → Extensions → Load unpacked → `.output/chrome-mv3-dev`
+
+2. **Test CV upload:**
+   - Click extension icon → Upload CV text/file
+   - Watch browser console for logs
+
+3. **Test job matching:**
+   - Visit LinkedIn or Indeed job page
+   - Look for match badge (if auto-badge enabled)
+   - Check console logs for job analysis
+
+## 📋 Development Notes
+
+- **TypeScript**: Full type safety with strict mode
+- **Hot Reload**: Changes auto-reload the extension
+- **Logging**: Comprehensive logging for debugging
+- **Chrome MV3**: Uses latest Manifest V3 architecture
+
+---
 
 # RoleAlign — AI-powered CV ↔ Job Match (On-Device)
 

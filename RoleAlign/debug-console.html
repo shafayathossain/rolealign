@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RoleAlign Debug Console</title>
+    <style>
+        body { 
+            font-family: 'Courier New', monospace; 
+            background: #1e1e1e; 
+            color: #d4d4d4; 
+            padding: 20px;
+            margin: 0;
+        }
+        .header {
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 8px;
+            border-left: 3px solid #007acc;
+            background: #252526;
+            border-radius: 3px;
+        }
+        .log-entry.debug { border-left-color: #666; }
+        .log-entry.info { border-left-color: #007acc; }
+        .log-entry.warn { border-left-color: #ff8c00; }
+        .log-entry.error { border-left-color: #f14c4c; }
+        .timestamp { color: #888; font-size: 0.9em; }
+        .namespace { color: #4ec9b0; font-weight: bold; }
+        .level { font-weight: bold; text-transform: uppercase; }
+        .args { margin-left: 10px; }
+        .clear-btn {
+            background: #007acc;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 3px;
+            margin: 0 5px;
+        }
+        .clear-btn:hover { background: #005a9e; }
+        .filter-section {
+            margin: 10px 0;
+            padding: 10px;
+            background: #2d2d30;
+            border-radius: 5px;
+        }
+        select, input {
+            background: #3c3c3c;
+            color: #d4d4d4;
+            border: 1px solid #555;
+            padding: 5px;
+            margin: 0 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>🔍 RoleAlign Debug Console</h2>
+        <div class="filter-section">
+            <label>Namespace:</label>
+            <select id="namespaceFilter">
+                <option value="">All</option>
+            </select>
+            
+            <label>Level:</label>
+            <select id="levelFilter">
+                <option value="">All</option>
+                <option value="debug">Debug</option>
+                <option value="info">Info</option>
+                <option value="warn">Warn</option>
+                <option value="error">Error</option>
+            </select>
+            
+            <button class="clear-btn" onclick="clearAllLogs()">Clear All Logs</button>
+            <button class="clear-btn" onclick="refreshLogs()">Refresh</button>
+            <button class="clear-btn" onclick="toggleAutoRefresh()" id="autoRefreshBtn">Auto Refresh: OFF</button>
+        </div>
+    </div>
+    
+    <div id="logs"></div>
+
+    <script>
+        let autoRefreshInterval = null;
+        let knownNamespaces = new Set();
+
+        async function getLogs() {
+            const result = await chrome.storage.local.get();
+            const logEntries = [];
+            
+            for (const [key, value] of Object.entries(result)) {
+                if (key.startsWith('rolealign/logs/')) {
+                    const namespace = key.replace('rolealign/logs/', '');
+                    knownNamespaces.add(namespace);
+                    if (Array.isArray(value)) {
+                        logEntries.push(...value.map(entry => ({...entry, ns: namespace})));
+                    }
+                }
+            }
+            
+            return logEntries.sort((a, b) => new Date(a.ts) - new Date(b.ts));
+        }
+
+        function updateNamespaceFilter() {
+            const select = document.getElementById('namespaceFilter');
+            const currentValue = select.value;
+            
+            // Clear existing options except "All"
+            select.innerHTML = '<option value="">All</option>';
+            
+            // Add namespace options
+            for (const ns of Array.from(knownNamespaces).sort()) {
+                const option = document.createElement('option');
+                option.value = ns;
+                option.textContent = ns;
+                if (ns === currentValue) option.selected = true;
+                select.appendChild(option);
+            }
+        }
+
+        function formatArgs(args) {
+            return args.map(arg => {
+                if (typeof arg === 'object') {
+                    return JSON.stringify(arg, null, 2);
+                }
+                return String(arg);
+            }).join(' ');
+        }
+
+        function displayLogs(logs) {
+            const namespaceFilter = document.getElementById('namespaceFilter').value;
+            const levelFilter = document.getElementById('levelFilter').value;
+            
+            const filteredLogs = logs.filter(log => {
+                if (namespaceFilter && log.ns !== namespaceFilter) return false;
+                if (levelFilter && log.level !== levelFilter) return false;
+                return true;
+            });
+
+            const logsDiv = document.getElementById('logs');
+            logsDiv.innerHTML = '';
+
+            filteredLogs.slice(-200).forEach(log => {
+                const div = document.createElement('div');
+                div.className = `log-entry ${log.level}`;
+                
+                const timestamp = new Date(log.ts).toLocaleTimeString();
+                div.innerHTML = `
+                    <span class="timestamp">${timestamp}</span>
+                    <span class="namespace">[${log.ns}]</span>
+                    <span class="level">${log.level}</span>
+                    <div class="args">${formatArgs(log.args)}</div>
+                `;
+                
+                logsDiv.appendChild(div);
+            });
+
+            // Auto-scroll to bottom
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+        }
+
+        async function refreshLogs() {
+            const logs = await getLogs();
+            updateNamespaceFilter();
+            displayLogs(logs);
+        }
+
+        async function clearAllLogs() {
+            const result = await chrome.storage.local.get();
+            const keysToRemove = Object.keys(result).filter(key => key.startsWith('rolealign/logs/'));
+            await chrome.storage.local.remove(keysToRemove);
+            refreshLogs();
+        }
+
+        function toggleAutoRefresh() {
+            const btn = document.getElementById('autoRefreshBtn');
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+                btn.textContent = 'Auto Refresh: OFF';
+            } else {
+                autoRefreshInterval = setInterval(refreshLogs, 1000);
+                btn.textContent = 'Auto Refresh: ON';
+            }
+        }
+
+        // Add filter change listeners
+        document.getElementById('namespaceFilter').addEventListener('change', async () => {
+            const logs = await getLogs();
+            displayLogs(logs);
+        });
+
+        document.getElementById('levelFilter').addEventListener('change', async () => {
+            const logs = await getLogs();
+            displayLogs(logs);
+        });
+
+        // Initial load
+        refreshLogs();
+    </script>
+</body>
+</html>
