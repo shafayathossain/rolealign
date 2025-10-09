@@ -490,8 +490,22 @@ Text: ${text}`;
         // Deduplicate and clean skills
         const uniqueSkills = deduplicateSkills(extractedSkills);
         
+        // Extract email from personal info for storage
+        let email = null;
+        try {
+          const personalInfoText = sections.personalInfo || '';
+          const emailMatch = personalInfoText.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+          email = emailMatch ? emailMatch[1] : null;
+          log.info("Email extracted from personal info", { email, found: !!email });
+        } catch (e) {
+          log.warn("Failed to extract email from personal info", e);
+        }
+        
         // Build structured CV from processed sections
         const cv = {
+          // Include email for storage association
+          email: email,
+          
           // Personal info (keep as-is, just cleaned up)
           personalInfo: processedSections.personalInfo?.structured || sections.personalInfo,
           
@@ -514,9 +528,34 @@ Text: ${text}`;
             skillsExtracted: extractedSkills.length,
             uniqueSkillsCount: uniqueSkills.length,
             processingMethod: "structured-extraction-and-skill-extraction",
-            summarySkipped: true
+            summarySkipped: true,
+            email: email
           }
         };
+
+        // Automatically save the processed CV
+        try {
+          if (email) {
+            const emailKey = `cv:${email}`;
+            await kv.set(emailKey, cv);
+            await kv.set("cv", cv); // Also save as default
+            log.info("CV automatically saved with email association", { 
+              email, 
+              emailKey, 
+              skillsCount: cv.skills.length,
+              sectionsCount: Object.keys(processedSections).length
+            });
+          } else {
+            await kv.set("cv", cv);
+            log.info("CV automatically saved as default (no email found)", { 
+              skillsCount: cv.skills.length,
+              sectionsCount: Object.keys(processedSections).length
+            });
+          }
+        } catch (saveError) {
+          log.error("Failed to automatically save processed CV", saveError);
+          // Continue anyway, return the CV data to popup
+        }
         
         log.info("PROCESS_CV_SECTIONS completed successfully", {
           requestId: req.id,
