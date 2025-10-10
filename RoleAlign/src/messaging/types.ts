@@ -38,6 +38,7 @@ export type Kind =
   | "GET_CV"
   | "ANALYZE_JOB"         // parse job page → normalized job data
   | "SCORE_MATCH"         // CV + job → numeric score/diagnostics
+  | "SCORE_MATCH_ENHANCED" // Enhanced scoring with AI semantic matching and chunking
   | "GENERATE_TAILORED_CV"
   | "LOG_EVENT";
 
@@ -114,6 +115,35 @@ export type ScoreMatchRes = BaseRes<
   { score: number; reasons: string[]; facets?: Record<string, number> }
 >;
 
+export type ScoreMatchEnhancedReq = BaseReq<
+  "SCORE_MATCH_ENHANCED",
+  { 
+    cv: unknown; 
+    job: unknown; 
+    chunks: string[];
+    useAI?: boolean;
+    semanticMatching?: boolean;
+  }
+>;
+export type ScoreMatchEnhancedRes = BaseRes<
+  "SCORE_MATCH_ENHANCED",
+  { 
+    score: number; 
+    reasons: string[]; 
+    facets?: Record<string, number>;
+    matchDetails?: {
+      matchedSkills: Array<{
+        userSkill: string;
+        jobSkill: string;
+        confidence: number;
+        semantic?: boolean;
+      }>;
+      missingSkills: string[];
+      aiReasoning?: string;
+    };
+  }
+>;
+
 export type GenerateTailoredCvReq = BaseReq<
   "GENERATE_TAILORED_CV",
   { cv: unknown; job: unknown; targetFormat?: "markdown" | "plain-text" }
@@ -139,6 +169,7 @@ export type AnyReq =
   | GetCvReq
   | AnalyzeJobReq
   | ScoreMatchReq
+  | ScoreMatchEnhancedReq
   | GenerateTailoredCvReq
   | LogEventReq;
 
@@ -152,6 +183,7 @@ export type AnyRes =
   | GetCvRes
   | AnalyzeJobRes
   | ScoreMatchRes
+  | ScoreMatchEnhancedRes
   | GenerateTailoredCvRes
   | LogEventRes
   | ErrorRes<Kind>;

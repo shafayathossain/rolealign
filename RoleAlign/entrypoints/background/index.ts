@@ -10,6 +10,7 @@ import type {
   GetCvReq,
   AnalyzeJobReq,
   ScoreMatchReq,
+  ScoreMatchEnhancedReq,
   GenerateTailoredCvReq,
   LogEventReq,
 } from "../../src/messaging/types";
@@ -656,30 +657,269 @@ Text: ${text}`;
           return errorRes(req, "BadRequest", `Unsupported site: ${site}`);
         }
         
-        // Parse job using site adapter
-        const parseResult = await adapter.parse({ url, html });
+        // Check AI availability first
+        let summarizerAvailable, promptAvailable;
         
-        if (!parseResult.ok) {
-          log.error("Site adapter parsing failed", { 
-            site, 
-            error: parseResult.error, 
-            details: parseResult.details 
+        try {
+          summarizerAvailable = await AI.Availability.summarizer();
+          promptAvailable = await AI.Availability.prompt();
+          
+          log.info("AI availability check completed", {
+            summarizer: summarizerAvailable,
+            prompt: promptAvailable
           });
-          return errorRes(req, "Internal", `Failed to parse ${site} job page: ${parseResult.error}`);
+        } catch (availError: any) {
+          log.error("Failed to check AI availability", {
+            error: availError?.message,
+            stack: availError?.stack
+          });
+          throw new Error(`AI availability check failed: ${availError?.message}`);
         }
         
-        const job = parseResult.job;
+        if (summarizerAvailable === "no") {
+          log.error("Summarizer API not available", { 
+            availability: summarizerAvailable,
+            message: "Please ensure Chrome AI flags are enabled"
+          });
+          throw new Error(`Summarizer API not available: ${summarizerAvailable}. Enable chrome://flags/#summarization-api-for-gemini-nano`);
+        }
         
-        log.info("ANALYZE_JOB ok", {
-          site: job.site,
-          title: job.title,
-          company: job.company,
-          location: job.location?.raw,
-          skillsCount: job.inferredSkills?.length ?? 0,
-          descLen: job.descriptionText?.length ?? 0,
-        });
+        if (summarizerAvailable === "after-download") {
+          log.warn("Summarizer API requires download", { availability: summarizerAvailable });
+          // Continue anyway - the AI.Summarize.text call will handle the download
+        }
         
-        return okRes(req, { job });
+        // Skip traditional parsing and use AI directly for job extraction
+        log.info("Using AI-first approach to extract job information from HTML");
+        
+        try {
+          // Extract job description from the specific div class
+          log.info("Extracting job description from specific LinkedIn div");
+          
+          let jobDescriptionHTML = '';
+          let jobTitleText = '';
+          let companyNameText = '';
+          
+          // Look for the job description div with the exact classes you specified
+          const jobDescMatch = html.match(/<div[^>]*class="[^"]*jobs-box__html-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+          if (jobDescMatch) {
+            jobDescriptionHTML = jobDescMatch[1];
+            log.info("Found job description div", {
+              htmlLength: jobDescriptionHTML.length,
+              htmlPreview: jobDescriptionHTML.substring(0, 200) + "..."
+            });
+          } else {
+            // Fallback: look for other job description containers
+            const fallbackMatches = [
+              /<div[^>]*class="[^"]*jobs-description-content__text[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+              /<div[^>]*class="[^"]*jobs-description__container[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+              /<section[^>]*class="[^"]*jobs-description[^"]*"[^>]*>([\s\S]*?)<\/section>/i
+            ];
+            
+            for (const pattern of fallbackMatches) {
+              const match = html.match(pattern);
+              if (match) {
+                jobDescriptionHTML = match[1];
+                log.info("Found job description with fallback pattern", {
+                  htmlLength: jobDescriptionHTML.length
+                });
+                break;
+              }
+            }
+          }
+          
+          if (!jobDescriptionHTML) {
+            throw new Error("Could not find job description content in LinkedIn page");
+          }
+          
+          // Also extract job title and company more accurately
+          const titleMatches = [
+            /<h1[^>]*class="[^"]*job-details-jobs-unified-top-card__job-title[^"]*"[^>]*>([^<]+)<\/h1>/i,
+            /<h1[^>]*class="[^"]*jobs-unified-top-card__job-title[^"]*"[^>]*>([^<]+)<\/h1>/i,
+            /<h1[^>]*>([^<]*(?:developer|engineer|analyst|manager|specialist)[^<]*)<\/h1>/i
+          ];
+          
+          for (const pattern of titleMatches) {
+            const match = html.match(pattern);
+            if (match) {
+              jobTitleText = match[1].trim();
+              log.debug("Extracted job title", { title: jobTitleText });
+              break;
+            }
+          }
+          
+          const companyMatches = [
+            /<a[^>]*class="[^"]*jobs-unified-top-card__company-name[^"]*"[^>]*>([^<]+)<\/a>/i,
+            /<span[^>]*class="[^"]*jobs-unified-top-card__company-name[^"]*"[^>]*>([^<]+)<\/span>/i,
+            /<div[^>]*class="[^"]*jobs-unified-top-card__company-name[^"]*"[^>]*>([^<]+)<\/div>/i
+          ];
+          
+          for (const pattern of companyMatches) {
+            const match = html.match(pattern);
+            if (match) {
+              companyNameText = match[1].trim();
+              log.debug("Extracted company name", { company: companyNameText });
+              break;
+            }
+          }
+          
+          // Clean the job description HTML to get text content
+          const cleanedJobText = jobDescriptionHTML
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // Remove scripts
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '') // Remove styles
+            .replace(/<[^>]+>/g, ' ') // Remove HTML tags
+            .replace(/\s+/g, ' ') // Normalize whitespace
+            .trim();
+          
+          log.info("Job description extracted and cleaned", { 
+            originalHTMLLength: jobDescriptionHTML.length,
+            cleanedLength: cleanedJobText.length,
+            preview: cleanedJobText.substring(0, 300) + "...",
+            extractedTitle: jobTitleText,
+            extractedCompany: companyNameText
+          });
+          
+          if (cleanedJobText.length < 100) {
+            throw new Error(`Job description too short (${cleanedJobText.length} chars): ${cleanedJobText}`);
+          }
+          
+          // Take the job description text for summarization
+          const textForSummarization = cleanedJobText;
+          
+          // Store cleanedJobText for later use
+          const cleanedText = cleanedJobText;
+          
+          log.info("Starting Summarization API call", {
+            textLength: textForSummarization.length,
+            context: "Extract job details from LinkedIn page"
+          });
+          
+          // Use Summarization API to extract job details - focusing only on the actual job content
+          const jobSummary = await AI.Summarize.text(textForSummarization, {
+            type: "key-points",
+            format: "markdown", 
+            length: "long",
+            context: "Extract job requirements, technical skills, responsibilities, and qualifications from this job posting. Focus ONLY on technical skills like programming languages, frameworks, tools, databases, cloud platforms, development methodologies, and specific technologies required for this position. Ignore any LinkedIn platform content or unrelated information.",
+            timeoutMs: 30000
+          });
+          
+          log.info("✅ Summarize API response received successfully", {
+            inputLength: textForSummarization.length,
+            summaryLength: jobSummary.length,
+            summaryPreview: jobSummary.substring(0, 300) + "...",
+            fullSummary: jobSummary
+          });
+          
+          if (!jobSummary || jobSummary.trim().length < 50) {
+            throw new Error("Summarization API returned empty or too short result");
+          }
+          
+          // Use the extracted title and company, with fallbacks
+          let jobTitle = jobTitleText || "Job Title";
+          let companyName = companyNameText || "Company";
+          
+          // If Prompt API is available, try to extract more details from summary
+          if (promptAvailable !== "no") {
+            try {
+              log.info("Using Prompt API to extract structured job details");
+              
+              const jobDetailsPrompt = `Extract job details from this LinkedIn job summary:
+
+${jobSummary}
+
+Return ONLY a valid JSON object (no markdown, no code fences) with job title and company name:
+{
+  "title": "exact job title from the posting",
+  "company": "company name"
+}`;
+
+              const jobDetails = await AI.Prompt.json(jobDetailsPrompt, { 
+                timeoutMs: 15000,
+                schema: {
+                  type: "object",
+                  properties: {
+                    title: { type: "string" },
+                    company: { type: "string" }
+                  },
+                  required: ["title", "company"]
+                }
+              });
+              
+              if (jobDetails.title && jobDetails.title.trim()) {
+                jobTitle = jobDetails.title.trim();
+              }
+              if (jobDetails.company && jobDetails.company.trim()) {
+                companyName = jobDetails.company.trim();
+              }
+              
+              log.info("✅ Prompt API job details extracted", { 
+                title: jobTitle, 
+                company: companyName,
+                promptResult: jobDetails
+              });
+              
+            } catch (promptError: any) {
+              log.warn("Prompt API failed, using extracted values from HTML", { 
+                error: promptError?.message,
+                fallbackTitle: jobTitle,
+                fallbackCompany: companyName
+              });
+            }
+          }
+          
+          // Create job object with AI-extracted content
+          const job = {
+            id: `ai-job-${Date.now()}`,
+            url,
+            site,
+            title: jobTitle,
+            company: companyName,
+            description: jobSummary,
+            descriptionText: jobSummary,
+            descriptionMarkdown: jobSummary,
+            lastSeenAt: new Date().toISOString(),
+            extras: { 
+              aiExtracted: true,
+              summarizerUsed: true,
+              originalTextLength: cleanedText.length
+            }
+          };
+          
+          log.info("🎉 AI job extraction completed successfully", {
+            title: job.title,
+            company: job.company,
+            descriptionLength: job.description.length,
+            summaryPreview: job.description.substring(0, 200) + "..."
+          });
+          
+          return okRes(req, { job });
+          
+        } catch (aiError: any) {
+          log.error("AI-based job extraction failed", {
+            error: aiError?.message,
+            stack: aiError?.stack
+          });
+          
+          // Fallback to emergency job data
+          const emergencyJob = {
+            id: `${site}-emergency-${Date.now()}`,
+            url: url || "unknown",
+            site: site,
+            title: "Job Analysis Failed",
+            company: "Company",
+            description: "Unable to analyze job content with AI.",
+            descriptionText: "Unable to analyze job content with AI.",
+            inferredSkills: [],
+            lastSeenAt: new Date().toISOString(),
+            extras: {
+              parseError: true,
+              errorMessage: aiError?.message || String(aiError)
+            }
+          };
+          
+          log.warn("Returning emergency fallback job data");
+          return okRes(req, { job: emergencyJob });
+        }
       } catch (e: any) {
         log.error("ANALYZE_JOB failed", { msg: e?.message, stack: e?.stack });
         return errorRes(req, "Internal", "Failed to analyze job page", { msg: e?.message });
@@ -728,6 +968,465 @@ Text: ${text}`;
           },
         },
       };
+    });
+    
+    // Helper function for regex-based skill extraction (removed hardcoded skills)
+    function extractSkillsWithRegex(text: string): string[] {
+      // This function is now a fallback that extracts general patterns
+      // but relies on AI for actual skill identification
+      const skills: string[] = [];
+      
+      // Extract words that could be technologies (no hardcoded skill lists)
+      const technicalPatterns = [
+        // Capitalized technical terms (common pattern for technologies)
+        /\b[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*)*\b/g,
+        // Common tech suffixes
+        /\b\w+(?:\.js|\.ts|\.py|\.java|\.swift|\.kt)\b/gi,
+        // Version numbers (often indicate technologies)
+        /\b\w+\s+\d+(?:\.\d+)*\b/gi
+      ];
+      
+      technicalPatterns.forEach(pattern => {
+        const matches = text.match(pattern);
+        if (matches) {
+          skills.push(...matches.map(match => match.trim()));
+        }
+      });
+      
+      // Clean and deduplicate
+      return [...new Set(skills
+        .map(skill => skill.trim())
+        .filter(skill => skill && skill.length > 1 && skill.length < 30)
+      )];
+    }
+
+    addHandler("SCORE_MATCH_ENHANCED", async (req: ScoreMatchEnhancedReq) => {
+      const { cv, job, chunks, useAI, semanticMatching } = req.payload;
+      
+      log.info("SCORE_MATCH_ENHANCED started", {
+        jobChunks: chunks.length,
+        useAI,
+        semanticMatching,
+        cvSkillsCount: cv?.skills?.length || 0
+      });
+      
+      try {
+        // Basic scoring input preparation
+        const input = toScoreInput(cv, job);
+        const cvSkills = cv?.skills || [];
+        
+        // Process job description in chunks to extract skills
+        let combinedJobSkills: string[] = [];
+        let combinedJobText = '';
+        
+        // Check AI availability first
+        const promptAvailable = await AI.Availability.prompt();
+        const summarizerAvailable = await AI.Availability.summarizer();
+        
+        log.info("Chrome AI availability check", {
+          prompt: promptAvailable,
+          summarizer: summarizerAvailable
+        });
+        
+        for (const [index, chunk] of chunks.entries()) {
+          log.debug(`Processing chunk ${index + 1}/${chunks.length}`, {
+            chunkLength: chunk.length
+          });
+          
+          // Use Chrome's AI APIs if available, otherwise fall back to regex
+          if (useAI && promptAvailable !== "no" && summarizerAvailable !== "no") {
+            try {
+              log.debug("Using Chrome Summarization + Prompt APIs for skill extraction");
+            
+            // First, use Summarization API to extract key technical points
+            const technicalSummary = await AI.Summarize.text(chunk, {
+              type: "key-points",
+              format: "markdown", 
+              length: "long",
+              context: "Extract ALL technical terms, technologies, frameworks, and skills mentioned in this job posting. Be extremely literal - only include what is explicitly written in the text. Do NOT infer, assume, or add related technologies. Copy exact technical terms as they appear: programming languages, framework names, platform names, specific libraries, development tools, technical concepts. Preserve compound technical terms exactly (e.g., 'Core Graphics', 'Multi-threaded programming'). Focus on concrete technical requirements only - exclude soft skills, company information, and general business terms.",
+              timeoutMs: 20000
+            });
+            
+            log.debug("Summarization API response", {
+              summary: technicalSummary,
+              length: technicalSummary.length
+            });
+            
+            // Then use Prompt API to extract specific skills from the summary
+            const skillsPrompt = `You are a literal text extraction tool. Extract ONLY the specific technical terms that are explicitly written in this job posting summary. Do NOT add, infer, or assume any technologies.
+
+Job Summary:
+${technicalSummary}
+
+STRICT EXTRACTION RULES:
+
+1. COPY EXACTLY: Only extract technical terms that appear word-for-word in the text
+2. NO INFERENCE: Do not add related technologies (e.g., if text says "iOS", don't add "Xcode")
+3. NO EXPANSION: Do not expand abbreviations or assume full names
+4. PRESERVE COMPOUND TERMS: Keep multi-word technical terms intact exactly as written
+5. TECHNICAL ONLY: Extract only programming languages, frameworks, libraries, platforms, technical concepts
+
+WHAT TO EXTRACT (only if explicitly mentioned):
+✅ Programming language names (Java, Swift, Kotlin, etc.)
+✅ Framework names exactly as written (SwiftUI, UIKit, Core Graphics, etc.)
+✅ Platform names (iOS, Android, etc.) 
+✅ Technical concepts exactly as written (Multi-threaded programming, Memory management, etc.)
+✅ Development tools exactly as mentioned
+✅ Technical acronyms (API, SDK, JNI, etc.)
+
+WHAT TO EXCLUDE:
+❌ Soft skills (communication, problem-solving, collaboration)
+❌ Company names (Notewise, etc.)
+❌ Job responsibilities (lead development, code reviews)
+❌ Education requirements (Bachelor's degree)
+❌ Experience levels (5+ years, Senior)
+❌ General terms (mobile, cloud, AI) unless they're specific technical requirements
+❌ Business terms (stakeholders, management, QA)
+❌ Inferred/related technologies not explicitly mentioned
+
+EXAMPLE:
+Text: "experience with UIKit, SwiftUI, Core Graphics"
+Extract: UIKit, SwiftUI, Core Graphics
+Do NOT extract: iOS development, Xcode, Interface Builder
+
+OUTPUT: Comma-separated list of exact technical terms from the text
+
+Technical Skills:`;
+            
+            const chunkSkillsText = await AI.Prompt.text(skillsPrompt, { timeoutMs: 15000 });
+            
+            log.debug("Prompt API response for skills extraction", {
+              response: chunkSkillsText,
+              length: chunkSkillsText.length
+            });
+            
+            // Validate AI response - check for error messages or invalid responses
+            const invalidPhrases = ['sorry', 'cannot', 'unable', 'i cannot', 'no skills', 'not mentioned'];
+            const isErrorResponse = invalidPhrases.some(phrase => 
+              chunkSkillsText.toLowerCase().includes(phrase)
+            ) || chunkSkillsText.trim().length < 5;
+            
+            if (isErrorResponse) {
+              log.warn("AI returned error/empty response, falling back to regex extraction", {
+                response: chunkSkillsText
+              });
+              throw new Error("AI returned invalid response");
+            }
+            
+            const chunkSkills = chunkSkillsText
+              .split(/[,\n]/)
+              .map(skill => skill.trim().replace(/^[•\-\*]\s*/, '')) // Remove bullet points
+              .filter(skill => skill && skill.length > 1 && skill.length < 50 && !skill.toLowerCase().includes('skill'));
+            
+            combinedJobSkills.push(...chunkSkills);
+            combinedJobText += chunk + ' ';
+            
+            log.debug(`Skills extracted from chunk ${index + 1}`, {
+              skillsCount: chunkSkills.length,
+              skills: chunkSkills
+            });
+            
+            } catch (chunkError: any) {
+              log.warn(`Chrome AI failed to extract skills from chunk ${index + 1}, using regex fallback`, {
+                error: chunkError?.message
+              });
+              
+              // Fallback: regex-based skill extraction
+              const regexSkills = extractSkillsWithRegex(chunk);
+              combinedJobSkills.push(...regexSkills);
+              combinedJobText += chunk + ' ';
+              
+              log.debug(`Regex fallback extracted ${regexSkills.length} skills`, {
+                skills: regexSkills
+              });
+            }
+          } else {
+            // AI not available or disabled, use regex extraction
+            log.debug(`Chrome AI not available or disabled (prompt: ${promptAvailable}, summarizer: ${summarizerAvailable}), using regex extraction`);
+            
+            const regexSkills = extractSkillsWithRegex(chunk);
+            combinedJobSkills.push(...regexSkills);
+            combinedJobText += chunk + ' ';
+            
+            log.debug(`Regex extraction found ${regexSkills.length} skills`, {
+              skills: regexSkills
+            });
+          }
+        }
+        
+        // Deduplicate job skills
+        const uniqueJobSkills = [...new Set(combinedJobSkills.map(s => s.toLowerCase()))];
+        
+        log.info("Job skills extraction completed", {
+          totalSkillsExtracted: combinedJobSkills.length,
+          uniqueSkills: uniqueJobSkills.length,
+          skills: uniqueJobSkills
+        });
+        
+        // Perform semantic skill matching using AI
+        let matchedSkills: Array<{
+          userSkill: string;
+          jobSkill: string;
+          confidence: number;
+          semantic: boolean;
+        }> = [];
+        
+        let missingSkills: string[] = [];
+        let aiReasoning = '';
+        
+        // Use AI-driven skill matching for maximum scalability
+        log.debug("Using AI-driven skill matching with no hardcoded patterns");
+        
+        const cvSkillsLower = cvSkills.map(s => s.toLowerCase().trim());
+        
+        log.info("Performing AI-driven skill matching", {
+          candidateSkills: cvSkills,
+          jobSkills: uniqueJobSkills,
+          candidateSkillsCount: cvSkills.length,
+          jobSkillsCount: uniqueJobSkills.length
+        });
+        
+        // Use AI to determine skill matches with no hardcoded patterns
+        if (useAI && promptAvailable !== "no" && cvSkills.length > 0 && uniqueJobSkills.length > 0) {
+          try {
+            log.debug("Using AI for skill matching analysis");
+            
+            const skillMatchingPrompt = `You are a strict skill matching tool. Compare candidate skills with job requirements using literal string matching. Do NOT make assumptions or create matches that don't exist.
+
+CANDIDATE SKILLS:
+${cvSkills.join(', ')}
+
+JOB REQUIRED SKILLS:  
+${uniqueJobSkills.join(', ')}
+
+MATCHING RULES:
+
+1. EXACT TECHNICAL MATCHES ONLY:
+   • Technical skills must match exactly as strings (case-insensitive)
+   • Java matches Java ✓
+   • Swift matches Swift ✓  
+   • SwiftUI matches SwiftUI ✓
+   • Core Graphics matches Core Graphics ✓
+   • BUT: Swift does NOT match SwiftUI ❌
+   • BUT: iOS does NOT match Core Graphics ❌
+
+2. LIMITED SEMANTIC MATCHING (Methodologies/Practices Only):
+   • Only for non-technical development practices
+   • Agile ↔ Scrum (both are project methodologies)
+   • CI/CD ↔ DevOps (both are deployment practices)
+   • Code Review ↔ Quality Assurance (both are quality practices)
+   • NOT for technical skills: Android ≠ Java, iOS ≠ Swift
+
+3. STRICT VALIDATION:
+   • If candidate has "API Integration" and job needs "REST API" → NO match
+   • If candidate has "Android Development" and job needs "Android" → possible match
+   • If candidate has "iOS" and job needs "iOS" → exact match
+   • If candidate has "Swift" and job needs "Swift" → exact match
+
+RETURN ONLY VALID MATCHES:
+• Must exist exactly in candidate skills list
+• Must exist exactly in job requirements list  
+• Must be logically equivalent (exact technical terms or equivalent methodologies)
+
+OUTPUT FORMAT:
+[{
+  "userSkill": "exact skill from candidate list",
+  "jobSkill": "exact skill from job requirements",
+  "matchType": "exact" or "semantic",
+  "confidence": 0.8-1.0
+}]
+
+Be extremely conservative - no false positives.`;
+            
+            const schema = {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  userSkill: { type: "string" },
+                  jobSkill: { type: "string" },
+                  matchType: { type: "string", enum: ["exact", "semantic"] },
+                  confidence: { type: "number", minimum: 0, maximum: 1 }
+                },
+                required: ["userSkill", "jobSkill", "matchType", "confidence"]
+              }
+            };
+            
+            const aiMatches = await AI.Prompt.json<Array<{
+              userSkill: string;
+              jobSkill: string;
+              matchType: string;
+              confidence: number;
+            }>>(skillMatchingPrompt, { schema, timeoutMs: 20000 });
+            
+            log.debug("AI skill matching response", {
+              matches: aiMatches,
+              matchCount: aiMatches?.length || 0
+            });
+            
+            // Validate and process AI matches
+            if (Array.isArray(aiMatches)) {
+              for (const match of aiMatches) {
+                // Validate that userSkill exists in candidate's skills
+                const userSkillExists = cvSkills.some(skill => 
+                  skill.toLowerCase().trim() === match.userSkill.toLowerCase().trim()
+                );
+                
+                // Validate that jobSkill exists in job requirements
+                const jobSkillExists = uniqueJobSkills.some(skill => 
+                  skill.toLowerCase().trim() === match.jobSkill.toLowerCase().trim()
+                );
+                
+                if (userSkillExists && jobSkillExists) {
+                  matchedSkills.push({
+                    userSkill: match.userSkill,
+                    jobSkill: match.jobSkill,
+                    confidence: Math.max(0, Math.min(1, match.confidence || 0.8)),
+                    semantic: match.matchType === "semantic"
+                  });
+                  
+                  log.debug("AI skill match validated", {
+                    userSkill: match.userSkill,
+                    jobSkill: match.jobSkill,
+                    type: match.matchType,
+                    confidence: match.confidence
+                  });
+                } else {
+                  log.warn("AI returned invalid skill match", {
+                    match,
+                    userSkillExists,
+                    jobSkillExists
+                  });
+                }
+              }
+              
+              // Determine missing skills
+              const matchedJobSkills = matchedSkills.map(m => m.jobSkill.toLowerCase().trim());
+              missingSkills = uniqueJobSkills.filter(jobSkill => 
+                !matchedJobSkills.includes(jobSkill.toLowerCase().trim())
+              );
+              
+              aiReasoning = `AI analyzed ${cvSkills.length} candidate skills against ${uniqueJobSkills.length} job requirements. Found ${matchedSkills.length} valid matches with no hallucinations.`;
+              
+            } else {
+              throw new Error("AI returned invalid match format");
+            }
+            
+          } catch (aiError: any) {
+            log.warn("AI skill matching failed, using basic exact matching", {
+              error: aiError?.message
+            });
+            
+            // Fallback to basic exact matching without hardcoded patterns
+            for (const jobSkill of uniqueJobSkills) {
+              const jobSkillLower = jobSkill.toLowerCase().trim();
+              
+              // Only exact matches - no hardcoded variations
+              const exactMatchIndex = cvSkillsLower.findIndex(cvSkill => 
+                cvSkill === jobSkillLower
+              );
+              
+              if (exactMatchIndex !== -1) {
+                const originalSkill = cvSkills[exactMatchIndex];
+                matchedSkills.push({
+                  userSkill: originalSkill,
+                  jobSkill: jobSkill,
+                  confidence: 1.0,
+                  semantic: false
+                });
+                
+                log.debug("Basic exact skill match", {
+                  userSkill: originalSkill,
+                  jobSkill: jobSkill
+                });
+              } else {
+                missingSkills.push(jobSkill);
+              }
+            }
+            
+            aiReasoning = "Fallback to basic exact matching due to AI unavailability. No semantic matching performed.";
+          }
+        } else {
+          log.debug("AI disabled or unavailable, using basic exact matching");
+          
+          // Basic exact matching when AI is disabled
+          for (const jobSkill of uniqueJobSkills) {
+            const jobSkillLower = jobSkill.toLowerCase().trim();
+            
+            const exactMatchIndex = cvSkillsLower.findIndex(cvSkill => 
+              cvSkill === jobSkillLower
+            );
+            
+            if (exactMatchIndex !== -1) {
+              const originalSkill = cvSkills[exactMatchIndex];
+              matchedSkills.push({
+                userSkill: originalSkill,
+                jobSkill: jobSkill,
+                confidence: 1.0,
+                semantic: false
+              });
+            } else {
+              missingSkills.push(jobSkill);
+            }
+          }
+          
+          aiReasoning = "Basic exact matching only - AI disabled or unavailable.";
+        }
+        
+        
+        // Calculate enhanced score based on matches
+        const totalJobSkills = uniqueJobSkills.length;
+        const matchedCount = matchedSkills.length;
+        const confidenceWeight = matchedSkills.reduce((sum, m) => sum + m.confidence, 0);
+        
+        const rawScore = totalJobSkills > 0 ? (confidenceWeight / totalJobSkills) : 0;
+        const enhancedScore = Math.min(Math.round(rawScore * 100), 100);
+        
+        // Generate comprehensive reasons
+        const reasons = [
+          `Matched ${matchedCount}/${totalJobSkills} required skills (${enhancedScore}%)`,
+          `Processed ${chunks.length} chunks of job description`,
+          `Used ${semanticMatching ? 'AI semantic' : 'basic'} matching`
+        ];
+        
+        if (matchedSkills.some(m => m.semantic)) {
+          reasons.push(`Found ${matchedSkills.filter(m => m.semantic).length} semantic skill matches`);
+        }
+        
+        const result = {
+          score: enhancedScore,
+          reasons,
+          facets: {
+            totalJobSkills,
+            matchedCount,
+            missingCount: missingSkills.length,
+            confidenceWeight,
+            chunksProcessed: chunks.length,
+            semanticMatching
+          },
+          matchDetails: {
+            matchedSkills,
+            missingSkills,
+            aiReasoning
+          }
+        };
+        
+        log.info("SCORE_MATCH_ENHANCED completed", {
+          score: enhancedScore,
+          matched: matchedCount,
+          missing: missingSkills.length,
+          confidence: confidenceWeight / matchedCount
+        });
+        
+        return okRes(req, result);
+        
+      } catch (error: any) {
+        log.error("SCORE_MATCH_ENHANCED failed", {
+          error: error?.message,
+          stack: error?.stack
+        });
+        throw error;
+      }
     });
     
     addHandler("GENERATE_TAILORED_CV", async (req: GenerateTailoredCvReq) => {

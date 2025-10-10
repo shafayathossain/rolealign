@@ -61,14 +61,33 @@ function makeMonitor(name: string, cb?: ProgressCallbacks["onDownloadProgress"])
 
 function cleanJsonFence(s: string) {
   const trimmed = s.trim();
-  const fenced = trimmed.replace(/^```json\s*|\s*```$/gim, "");
+  
+  // Remove markdown code fences more aggressively
+  let cleaned = trimmed;
+  
+  // Remove ```json at start and ``` at end
+  cleaned = cleaned.replace(/^```json\s*/i, '');
+  cleaned = cleaned.replace(/^```\s*/i, ''); // Also handle plain ```
+  cleaned = cleaned.replace(/\s*```\s*$/i, '');
+  
+  // Remove any remaining backticks
+  cleaned = cleaned.replace(/^`+|`+$/g, '');
+  
+  // Trim again
+  cleaned = cleaned.trim();
+  
   try {
-    return JSON.parse(fenced);
+    return JSON.parse(cleaned);
   } catch (e1) {
+    // If that fails, try the original trimmed version
     try {
       return JSON.parse(trimmed);
     } catch (e2) {
-      log.error("JSON parse failed from model output", { trimmed });
+      log.error("JSON parse failed from model output", { 
+        original: s.substring(0, 200) + "...",
+        trimmed: trimmed.substring(0, 200) + "...",
+        cleaned: cleaned.substring(0, 200) + "..."
+      });
       throw e2;
     }
   }
