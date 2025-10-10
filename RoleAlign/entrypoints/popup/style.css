@@ -106,3 +106,93 @@ a { color: inherit; text-decoration: underline; }
 
 .footline { margin-top: 8px; font-size: 11px; color: var(--muted); }
 .error { color: #b00020; margin-top: 6px; font-size: 12px; }
+
+/* Success Popup Styles */
+.popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.success-popup {
+  background: var(--bg);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  max-width: 400px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.popup-header {
+  padding: 16px 20px 0;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.popup-header h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  color: var(--fg);
+}
+
+.popup-content {
+  padding: 16px 20px;
+}
+
+.popup-content p {
+  margin: 0 0 12px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.parsed-preview {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin-top: 8px;
+}
+
+.parsed-preview h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: var(--fg);
+}
+
+.parsed-preview p {
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.parsed-preview strong {
+  color: var(--brand);
+}
+
+.responsibilities-preview,
+.description-preview {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+  max-height: 100px;
+  overflow-y: auto;
+  line-height: 1.4;
+}
+
+.popup-actions {
+  padding: 0 20px 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.popup-actions .btn {
+  min-width: 120px;
+}

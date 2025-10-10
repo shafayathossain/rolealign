@@ -34,6 +34,14 @@ export function CVManageView({ editingCV, onSave, onBack }: CVManageViewProps) {
   const handleSave = () => {
     onSave(localCV);
   };
+  
+  const handleCVUpdate = (updatedCV: any) => {
+    setLocalCV(updatedCV);
+    console.log('✅ CV updated with new skills', { 
+      skillsCount: updatedCV.skills?.length || 0,
+      skills: updatedCV.skills 
+    });
+  };
 
   const updateSection = (section: string, value: any) => {
     setLocalCV((prev: any) => ({
@@ -42,16 +50,34 @@ export function CVManageView({ editingCV, onSave, onBack }: CVManageViewProps) {
     }));
   };
 
-  const addSkill = (newSkill: string) => {
+  const addSkill = async (newSkill: string) => {
     if (newSkill.trim() && !localCV.skills?.includes(newSkill.trim())) {
       const updatedSkills = [...(localCV.skills || []), newSkill.trim()];
-      updateSection('skills', updatedSkills);
+      const updatedCV = { ...localCV, skills: updatedSkills };
+      setLocalCV(updatedCV);
+      
+      // Save to database immediately
+      try {
+        await onSave(updatedCV);
+        console.log('✅ Skill added and saved to database');
+      } catch (error) {
+        console.error('❌ Failed to save skill addition:', error);
+      }
     }
   };
 
-  const removeSkill = (skillToRemove: string) => {
+  const removeSkill = async (skillToRemove: string) => {
     const updatedSkills = localCV.skills?.filter((skill: string) => skill !== skillToRemove) || [];
-    updateSection('skills', updatedSkills);
+    const updatedCV = { ...localCV, skills: updatedSkills };
+    setLocalCV(updatedCV);
+    
+    // Save to database immediately
+    try {
+      await onSave(updatedCV);
+      console.log('✅ Skill removed and saved to database');
+    } catch (error) {
+      console.error('❌ Failed to save skill removal:', error);
+    }
   };
 
   return (
@@ -159,6 +185,9 @@ export function CVManageView({ editingCV, onSave, onBack }: CVManageViewProps) {
           <ExperienceManager 
             experience={Array.isArray(localCV.experience) ? localCV.experience : []}
             onUpdate={(experience) => updateSection('experience', experience)}
+            onSave={onSave}
+            localCV={localCV}
+            onCVUpdate={handleCVUpdate}
           />
         )}
 
@@ -166,6 +195,9 @@ export function CVManageView({ editingCV, onSave, onBack }: CVManageViewProps) {
           <ProjectsManager 
             projects={Array.isArray(localCV.projects) ? localCV.projects : []}
             onUpdate={(projects) => updateSection('projects', projects)}
+            onSave={onSave}
+            localCV={localCV}
+            onCVUpdate={handleCVUpdate}
           />
         )}
       </div>
