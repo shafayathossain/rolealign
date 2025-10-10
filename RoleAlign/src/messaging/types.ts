@@ -40,6 +40,7 @@ export type Kind =
   | "SCORE_MATCH"         // CV + job → numeric score/diagnostics
   | "SCORE_MATCH_ENHANCED" // Enhanced scoring with AI semantic matching and chunking
   | "GENERATE_TAILORED_CV"
+  | "OPEN_CV_BUILDER"     // open CV builder page in new tab
   | "LOG_EVENT";
 
 /** Base request with discriminated union. */
@@ -153,6 +154,12 @@ export type GenerateTailoredCvRes = BaseRes<
   { text: string; downloadName?: string }
 >;
 
+export type OpenCvBuilderReq = BaseReq<
+  "OPEN_CV_BUILDER",
+  { jobData: unknown }
+>;
+export type OpenCvBuilderRes = BaseRes<"OPEN_CV_BUILDER", { opened: true }>;
+
 export type LogEventReq = BaseReq<
   "LOG_EVENT",
   { level: "debug" | "info" | "warn" | "error"; msg: string; extra?: unknown }
@@ -171,6 +178,7 @@ export type AnyReq =
   | ScoreMatchReq
   | ScoreMatchEnhancedReq
   | GenerateTailoredCvReq
+  | OpenCvBuilderReq
   | LogEventReq;
 
 /** Union of all responses (success or error). */
@@ -185,6 +193,7 @@ export type AnyRes =
   | ScoreMatchRes
   | ScoreMatchEnhancedRes
   | GenerateTailoredCvRes
+  | OpenCvBuilderRes
   | LogEventRes
   | ErrorRes<Kind>;
 

@@ -12,6 +12,7 @@ import type {
   ScoreMatchReq,
   ScoreMatchEnhancedReq,
   GenerateTailoredCvReq,
+  OpenCvBuilderReq,
   LogEventReq,
 } from "../../src/messaging/types";
 import { AI } from "../../src/ai/chrome-ai";
@@ -1527,11 +1528,93 @@ Be extremely conservative - no false positives.`;
       return okRes(req, { text, downloadName });
     });
     
+    addHandler("OPEN_CV_BUILDER", async (req: OpenCvBuilderReq) => {
+      const { jobData } = req.payload;
+      
+      try {
+        // Generate unique session ID for this CV builder session
+        const sessionId = `cv-builder-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Store job data in chrome storage with session ID
+        await chrome.storage.local.set({
+          [sessionId]: {
+            jobData,
+            timestamp: Date.now(),
+            expires: Date.now() + (5 * 60 * 1000) // Expire after 5 minutes
+          }
+        });
+        
+        log.info("Stored job data in chrome storage", { 
+          sessionId, 
+          dataSize: JSON.stringify(jobData).length 
+        });
+        
+        // Create CV builder URL with just the session ID
+        const cvBuilderUrl = chrome.runtime.getURL(`cv-builder.html?session=${sessionId}`);
+        
+        log.info("Opening CV Builder in new tab", { url: cvBuilderUrl, sessionId });
+        
+        // Create new tab with the CV builder page
+        await chrome.tabs.create({
+          url: cvBuilderUrl,
+          active: true
+        });
+        
+        return okRes(req, { opened: true });
+      } catch (error) {
+        log.error("Failed to open CV Builder", { error });
+        throw error;
+      }
+    });
+    
     addHandler("LOG_EVENT", async (req: LogEventReq) => {
       const { level, msg, extra } = req.payload;
       log[level]?.(msg, extra);
       return okRes(req, { recorded: true });
     });
+
+    // Add global message listener for CV builder AI API calls
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (message.type?.startsWith('AI_')) {
+        handleAIMessage(message, sender, sendResponse);
+        return true; // Keep the message channel open for async response
+      }
+    });
+
+    async function handleAIMessage(message: any, sender: any, sendResponse: any) {
+      try {
+        let result;
+
+        switch (message.type) {
+          case 'AI_PROMPT_TEXT':
+            result = await AI.Prompt.text(message.prompt, message.options || {});
+            sendResponse({ result });
+            break;
+
+          case 'AI_SUMMARIZE_TEXT':
+            result = await AI.Summarize.text(message.text, message.options || {});
+            sendResponse({ result });
+            break;
+
+          case 'AI_AVAILABILITY_PROMPT':
+            result = await AI.Availability.prompt();
+            sendResponse({ result });
+            break;
+
+          case 'AI_AVAILABILITY_SUMMARIZER':
+            result = await AI.Availability.summarizer();
+            sendResponse({ result });
+            break;
+
+          default:
+            sendResponse({ error: `Unknown AI API type: ${message.type}` });
+            break;
+        }
+      } catch (error: any) {
+        log.error(`AI API call failed: ${message.type}`, { error: error?.message });
+        sendResponse({ error: error?.message || 'AI API call failed' });
+      }
+    }
 
     /* ─────────────────────────  Helpers  ───────────────────────── */
 

@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RoleAlign - Tailored CV Builder</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+    }
+
+    .container {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(20px);
+      border-radius: 20px;
+      padding: 40px;
+      width: 90%;
+      max-width: 600px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .logo {
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      background: linear-gradient(45deg, #fff, #e0e7ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle {
+      font-size: 18px;
+      opacity: 0.9;
+      margin-bottom: 40px;
+    }
+
+    .status-text {
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 30px;
+      opacity: 0.95;
+    }
+
+    .progress-container {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 12px;
+      padding: 20px;
+      margin: 30px 0;
+    }
+
+    .shimmer-container {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    .shimmer-line {
+      height: 16px;
+      background: linear-gradient(90deg, 
+        rgba(255, 255, 255, 0.2) 0%, 
+        rgba(255, 255, 255, 0.4) 50%, 
+        rgba(255, 255, 255, 0.2) 100%);
+      background-size: 200% 100%;
+      border-radius: 8px;
+      animation: shimmer 2s infinite;
+    }
+
+    .shimmer-line.short {
+      width: 60%;
+    }
+
+    .shimmer-line.medium {
+      width: 80%;
+    }
+
+    .shimmer-line.long {
+      width: 100%;
+    }
+
+    @keyframes shimmer {
+      0% {
+        background-position: -200% 0;
+      }
+      100% {
+        background-position: 200% 0;
+      }
+    }
+
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-top: 4px solid #fff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .job-info {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 30px;
+      text-align: left;
+    }
+
+    .job-info h3 {
+      font-size: 18px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .job-detail {
+      margin-bottom: 8px;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+
+    .job-detail strong {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">RoleAlign</div>
+    <div class="subtitle">AI-Powered CV Tailoring</div>
+    
+    <div id="job-info" class="job-info" style="display: none;">
+      <h3>📄 Tailoring CV for:</h3>
+      <div class="job-detail"><strong>Position:</strong> <span id="job-title">Loading...</span></div>
+      <div class="job-detail"><strong>Company:</strong> <span id="job-company">Loading...</span></div>
+      <div class="job-detail"><strong>Match Score:</strong> <span id="match-score">Loading...</span>%</div>
+    </div>
+
+    <div class="status-text">🎯 Crafting your perfect CV...</div>
+    
+    <div class="progress-container">
+      <div class="shimmer-container">
+        <div class="shimmer-line long"></div>
+        <div class="shimmer-line medium"></div>
+        <div class="shimmer-line short"></div>
+        <div class="shimmer-line long"></div>
+        <div class="shimmer-line medium"></div>
+        <div class="shimmer-line short"></div>
+        <div class="shimmer-line long"></div>
+      </div>
+    </div>
+
+    <div class="loading-spinner"></div>
+    
+    <div style="font-size: 16px; opacity: 0.8; margin-top: 20px;">
+      Analyzing job requirements and optimizing your CV...
+    </div>
+    
+    <div style="font-size: 14px; opacity: 0.6; margin-top: 15px;">
+      This may take a few moments
+    </div>
+  </div>
+
+  <script type="module">
+    // Use chrome.runtime.sendMessage to access AI APIs through background script
+    const AI = {
+      Prompt: {
+        text: async (prompt, options = {}) => {
+          return new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({
+              type: 'AI_PROMPT_TEXT',
+              prompt: prompt,
+              options: options
+            }, (response) => {
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+              } else if (response.error) {
+                reject(new Error(response.error));
+              } else {
+                resolve(response.result);
+              }
+            });
+          });
+        }
+      },
+      Summarize: {
+        text: async (text, options = {}) => {
+          return new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({
+              type: 'AI_SUMMARIZE_TEXT',
+              text: text,
+              options: options
+            }, (response) => {
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+              } else if (response.error) {
+                reject(new Error(response.error));
+              } else {
+                resolve(response.result);
+              }
+            });
+          });
+        }
+      },
+      Availability: {
+        prompt: async () => {
+          return new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({
+              type: 'AI_AVAILABILITY_PROMPT'
+            }, (response) => {
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+              } else if (response.error) {
+                reject(new Error(response.error));
+              } else {
+                resolve(response.result);
+              }
+            });
+          });
+        },
+        summarizer: async () => {
+          return new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({
+              type: 'AI_AVAILABILITY_SUMMARIZER'
+            }, (response) => {
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+              } else if (response.error) {
+                reject(new Error(response.error));
+              } else {
+                resolve(response.result);
+              }
+            });
+          });
+        }
+      }
+    };
+    
+    const log = {
+      info: (msg, data) => console.log(`[CV-BUILDER] ${msg}`, data || ''),
+      error: (msg, data) => console.error(`[CV-BUILDER] ${msg}`, data || ''),
+      debug: (msg, data) => console.debug(`[CV-BUILDER] ${msg}`, data || '')
+    };
+
+    function cleanJsonFence(s) {
+      const trimmed = s.trim();
+      
+      // Remove markdown code fences more aggressively
+      let cleaned = trimmed;
+      
+      // Remove ```json at start and ``` at end
+      cleaned = cleaned.replace(/^```json\s*/i, '');
+      cleaned = cleaned.replace(/^```\s*/i, ''); // Also handle plain ```
+      cleaned = cleaned.replace(/\s*```\s*$/i, '');
+      
+      // Remove any remaining backticks
+      cleaned = cleaned.replace(/^`+|`+$/g, '');
+      
+      // Trim again
+      cleaned = cleaned.trim();
+      
+      try {
+        return JSON.parse(cleaned);
+      } catch (e1) {
+        // If that fails, try the original trimmed version
+        try {
+          return JSON.parse(trimmed);
+        } catch (e2) {
+          log.error("JSON parse failed from AI output", { 
+            original: s.substring(0, 200) + "...",
+            trimmed: trimmed.substring(0, 200) + "...",
+            cleaned: cleaned.substring(0, 200) + "..."
+          });
+          throw e2;
+        }
+      }
+    }
+
+    class CVBuilderPage {
+      constructor() {
+        this.jobInfo = null;
+        this.originalCV = null;
+        this.tailoredCV = null;
+        this.aiAPIs = {};
+        log.info("CV Builder page initialized");
+        this.init();
+      }
+
+      async init() {
+        try {
+          const urlParams = new URLSearchParams(window.location.search);
+          const sessionId = urlParams.get('session');
+          
+          if (sessionId) {
+            log.info("Loading job data from storage", { sessionId });
+            
+            const result = await chrome.storage.local.get([sessionId]);
+            const sessionData = result[sessionId];
+            
+            if (sessionData && sessionData.jobData) {
+              if (Date.now() > sessionData.expires) {
+                log.error("Session data has expired", { sessionId });
+                throw new Error("Session expired");
+              }
+              
+              this.jobInfo = sessionData.jobData;
+              console.log("🎯 CV Builder - Received job data:", this.jobInfo);
+              this.displayJobInfo();
+              
+              await chrome.storage.local.remove([sessionId]);
+              log.info("Cleaned up session data", { sessionId });
+              
+            } else {
+              log.error("No job data found for session", { sessionId });
+              throw new Error("No job data found");
+            }
+          } else {
+            log.error("No session ID provided");
+            throw new Error("No session ID provided");
+          }
+
+          await this.loadUserCV();
+          await this.performAITailoring();
+          
+        } catch (error) {
+          log.error("Failed to initialize CV builder", error);
+          this.showError("Failed to load job information: " + error.message);
+        }
+      }
+
+      async loadUserCV() {
+        try {
+          log.info("Loading user CV from extension storage");
+          
+          const storageKeys = ['cv', 'cv.current'];
+          let cvData = null;
+          
+          for (const key of storageKeys) {
+            const result = await chrome.storage.local.get([key]);
+            if (result[key]) {
+              cvData = result[key];
+              log.info("Found CV data with key:", key);
+              break;
+            }
+          }
+          
+          if (!cvData) {
+            throw new Error("No CV data found. Please upload your CV first.");
+          }
+          
+          if (cvData.data) {
+            this.originalCV = cvData.data;
+          } else if (cvData.personalInfo || cvData.experience || cvData.skills) {
+            this.originalCV = cvData;
+          } else {
+            throw new Error("Invalid CV data format found.");
+          }
+          
+          log.info("User CV loaded successfully", {
+            experienceCount: this.originalCV.experience?.length || 0,
+            projectsCount: this.originalCV.projects?.length || 0,
+            skillsCount: this.originalCV.skills?.length || 0,
+            personalInfo: this.originalCV.personalInfo?.name || 'Unknown'
+          });
+          
+        } catch (error) {
+          log.error("Failed to load user CV", { error });
+          throw new Error("Could not load your CV. Please ensure you have uploaded your CV in the extension popup.");
+        }
+      }
+
+      async performAITailoring() {
+        try {
+          log.info("Starting AI-powered CV tailoring process");
+          this.updateStatus("🤖 Initializing Chrome AI models...");
+          
+          // Initialize all Chrome AI APIs
+          await this.initializeAIAPIs();
+          
+          // Step 1: Analyze job description with Summarizer API
+          this.updateStatus("🔍 Analyzing job requirements with AI...");
+          const jobAnalysis = await this.analyzeJobRequirements();
+          
+          // Step 2: Generate tailored professional summary with Writer API
+          this.updateStatus("📝 Creating tailored professional summary...");
+          const tailoredSummary = await this.generateTailoredSummary(jobAnalysis);
+          
+          // Step 3: Enhance experience descriptions with Rewriter API
+          this.updateStatus("💼 Enhancing work experience descriptions...");
+          const enhancedExperience = await this.enhanceExperience(jobAnalysis);
+          
+          // Step 4: Generate project descriptions with AI
+          this.updateStatus("🎯 Optimizing project descriptions...");
+          const optimizedProjects = await this.optimizeProjects(jobAnalysis);
+          
+          // Step 5: Optimize skills section with AI
+          this.updateStatus("⚡ Optimizing skills section...");
+          const optimizedSkills = await this.optimizeSkills(jobAnalysis);
+          
+          // Step 6: Calculate AI-based tailoring score
+          this.updateStatus("📊 Calculating tailoring score...");
+          const tailoringScore = await this.calculateTailoringScore(jobAnalysis);
+          
+          // Combine everything into tailored CV
+          this.tailoredCV = {
+            ...this.originalCV,
+            summary: tailoredSummary,
+            experience: enhancedExperience,
+            projects: optimizedProjects,
+            skills: optimizedSkills,
+            tailoringScore: tailoringScore,
+            optimizations: {
+              selectedProjects: optimizedProjects.map(p => p.name),
+              enhancedExperiences: enhancedExperience.map(exp => `${exp.title} at ${exp.company}`),
+              addedKeywords: jobAnalysis.keySkills || [],
+              removedIrrelevant: []
+            }
+          };
+          
+          // Generate PDF
+          this.updateStatus("📄 Generating professional CV...");
+          await this.generateCVPDF();
+          
+          this.showCompletion();
+          
+        } catch (error) {
+          log.error("AI CV tailoring failed", { error });
+          this.showError("Failed to tailor CV with AI: " + error.message);
+        }
+      }
+
+      async initializeAIAPIs() {
+        try {
+          log.info("Initializing Chrome AI APIs");
+          
+          // Check availability using the proper AI module
+          const promptAvailability = await AI.Availability.prompt();
+          const summarizerAvailability = await AI.Availability.summarizer();
+          
+          log.info("AI API availability check completed", {
+            prompt: promptAvailability,
+            summarizer: summarizerAvailability
+          });
+          
+          // Require both APIs to be available for perfect AI-driven CV generation
+          if (promptAvailability !== 'readily' && promptAvailability !== 'available') {
+            throw new Error(`Prompt API not available: ${promptAvailability}. Please enable chrome://flags/#prompt-api-for-gemini-nano`);
+          }
+          
+          if (summarizerAvailability !== 'readily' && summarizerAvailability !== 'available') {
+            throw new Error(`Summarizer API not available: ${summarizerAvailability}. Please enable chrome://flags/#summarization-api-for-gemini-nano`);
+          }
+          
+          // Mark APIs as available
+          this.aiAPIs.prompt = true;
+          this.aiAPIs.summarizer = true;
+          
+          const availableAPIs = {
+            prompt: this.aiAPIs.prompt,
+            summarizer: this.aiAPIs.summarizer
+          };
+
+          log.info("All required AI APIs are available", availableAPIs);
+          return availableAPIs;
+
+        } catch (error) {
+          log.error("AI APIs initialization failed", { error });
+          throw error;
+        }
+      }
+
+      async analyzeJobRequirements() {
+        try {
+          const jobDescription = this.jobInfo.matchDetails?.jobDescriptionText || "";
+          const jobTitle = this.jobInfo.title;
+          const company = this.jobInfo.company;
+
+          // Both APIs are guaranteed to be available from initializeAIAPIs()
+
+          // Use Summarizer API to extract key requirements
+          const analysisPrompt = `Analyze this job posting for ${jobTitle} at ${company}:
+
+${jobDescription}
+
+Extract and summarize:
+1. Required technical skills and technologies
+2. Preferred qualifications and experience levels
+3. Key responsibilities and duties
+4. Industry-specific requirements
+5. Soft skills and competencies needed
+
+Focus on actionable requirements that can be matched against a CV.`;
+
+          const analysis = await AI.Summarize.text(analysisPrompt, {
+            type: 'key-points',
+            format: 'markdown',
+            length: 'medium'
+          });
+          
+          // Use Prompt API to structure the analysis
+          const structuredAnalysis = await AI.Prompt.text(`Based on this job analysis:
+
+${analysis}
+
+Extract and return a JSON object with:
+{
+  "keySkills": ["skill1", "skill2", ...],
+  "requirements": ["req1", "req2", ...],
+  "responsibilities": ["resp1", "resp2", ...],
+  "experienceLevel": "junior|mid|senior",
+  "industry": "industry_name",
+  "technologies": ["tech1", "tech2", ...]
+}
+
+Focus on specific, measurable requirements.`);
+
+          try {
+            return cleanJsonFence(structuredAnalysis);
+          } catch {
+            return { keySkills: [], requirements: [], responsibilities: [], experienceLevel: "mid", industry: "technology", technologies: [] };
+          }
+
+        } catch (error) {
+          log.error("Failed to analyze job requirements", { error });
+          return { keySkills: [], requirements: [], responsibilities: [], experienceLevel: "mid", industry: "technology", technologies: [] };
+        }
+      }
+
+      async generateTailoredSummary(jobAnalysis) {
+        try {
+          const originalSummary = this.originalCV.summary || "";
+          const jobTitle = this.jobInfo.title;
+          const company = this.jobInfo.company;
+
+          const prompt = `Write a professional CV summary that aligns with the following job requirements:
+
+Job: ${jobTitle} at ${company}
+Required skills: ${jobAnalysis.keySkills?.join(', ') || 'various technical skills'}
+Industry: ${jobAnalysis.industry || 'technology'}
+Experience level: ${jobAnalysis.experienceLevel || 'mid-level'}
+
+Original summary: ${originalSummary}
+
+Write a tailored professional summary (2-3 sentences) that highlights relevant experience and skills that match the position.`;
+
+          const tailoredSummary = await AI.Prompt.text(prompt);
+          return tailoredSummary;
+
+        } catch (error) {
+          log.error("Failed to generate tailored summary", { error });
+          throw error;
+        }
+      }
+
+      async enhanceExperience(jobAnalysis) {
+        try {
+          if (!this.originalCV.experience) return [];
+
+          const enhancedExperience = [];
+
+          for (const exp of this.originalCV.experience) {
+            let enhancedExp = { ...exp };
+
+            // Generate responsibilities if missing using Prompt API
+            if (!exp.responsibilities || exp.responsibilities.length === 0) {
+              const prompt = `Generate 5-7 professional responsibilities and achievements for this position that align with the target job requirements:
+
+Position: ${exp.title || exp.position} at ${exp.company}
+Target job requirements: ${jobAnalysis.requirements?.join(', ') || 'professional responsibilities'}
+Required skills: ${jobAnalysis.keySkills?.join(', ') || 'technical skills'}
+
+Format as bullet points starting with •. Focus on measurable achievements and technical skills relevant to the target role.`;
+
+              const responsibilities = await AI.Prompt.text(prompt);
+              enhancedExp.responsibilities = responsibilities
+                .split('\n')
+                .map(line => line.replace(/^[•\-\*]\s*/, '').trim())
+                .filter(line => line.length > 10);
+            }
+
+            // Enhance existing responsibilities with Prompt API
+            else if (exp.responsibilities) {
+              const responsibilitiesText = Array.isArray(exp.responsibilities) 
+                ? exp.responsibilities.join('\n• ') 
+                : exp.responsibilities;
+
+              const prompt = `Enhance these work responsibilities for a ${jobAnalysis.industry} industry role requiring: ${jobAnalysis.keySkills?.join(', ') || 'professional skills'}:
+
+${responsibilitiesText}
+
+Rewrite them to be more professional and relevant to the target role. Keep the same number of points but make them more impactful and specific. Format as bullet points.`;
+
+              const enhanced = await AI.Prompt.text(prompt);
+              enhancedExp.responsibilities = enhanced
+                .split('\n')
+                .map(line => line.replace(/^[•\-\*]\s*/, '').trim())
+                .filter(line => line.length > 10);
+            }
+
+            enhancedExperience.push(enhancedExp);
+          }
+
+          return enhancedExperience;
+        } catch (error) {
+          log.error("Failed to enhance experience", { error });
+          return this.originalCV.experience || [];
+        }
+      }
+
+      async optimizeProjects(jobAnalysis) {
+        try {
+          if (!this.originalCV.projects) return [];
+
+          const optimizedProjects = [];
+
+          for (const project of this.originalCV.projects) {
+            let optimizedProject = { ...project };
+
+            // Generate description if missing using Prompt API
+            if (!project.description || project.description.length < 50) {
+              const technologies = Array.isArray(project.technologies) 
+                ? project.technologies.join(', ') 
+                : project.technologies || 'modern technologies';
+
+              const prompt = `Write a comprehensive project description (100-150 words) for this project:
+
+Project: ${project.name}
+Technologies used: ${technologies}
+Target job: ${this.jobInfo.title}
+Required skills: ${jobAnalysis.keySkills?.join(', ') || 'technical skills'}
+
+Highlight technical achievements, problem-solving approaches, and measurable impact. Focus on skills and technologies relevant to the target job. Make it professional and detailed.`;
+
+              const description = await AI.Prompt.text(prompt);
+              optimizedProject.description = description;
+            }
+
+            // Enhance existing description with Prompt API
+            else if (project.description) {
+              const prompt = `Enhance this project description for a ${jobAnalysis.industry} role requiring: ${jobAnalysis.keySkills?.join(', ') || 'technical skills'}:
+
+${project.description}
+
+Rewrite it to be more professional and relevant to the target role. Keep the same length but make it more impactful and highlight relevant technical skills.`;
+              
+              const enhanced = await AI.Prompt.text(prompt);
+              optimizedProject.description = enhanced;
+            }
+
+            optimizedProjects.push(optimizedProject);
+          }
+
+          return optimizedProjects;
+        } catch (error) {
+          log.error("Failed to optimize projects", { error });
+          return this.originalCV.projects || [];
+        }
+      }
+
+      async optimizeSkills(jobAnalysis) {
+        try {
+          const originalSkills = this.originalCV.skills || [];
+          const jobSkills = jobAnalysis.keySkills || [];
+          const jobTechnologies = jobAnalysis.technologies || [];
+
+          const skillsPrompt = `Original CV skills: ${originalSkills.join(', ')}
+Job requirements: ${jobSkills.join(', ')}
+Job technologies: ${jobTechnologies.join(', ')}
+
+Optimize the skills list by:
+1. Prioritizing skills that match job requirements
+2. Adding relevant skills from job requirements that are missing
+3. Removing or deprioritizing irrelevant skills
+4. Grouping related technologies
+
+Return a JSON array of optimized skills: ["skill1", "skill2", ...]`;
+
+          const optimizedSkillsResponse = await AI.Prompt.text(skillsPrompt);
+          const optimizedSkills = cleanJsonFence(optimizedSkillsResponse);
+          return Array.isArray(optimizedSkills) ? optimizedSkills : originalSkills;
+
+        } catch (error) {
+          log.error("Failed to optimize skills", { error });
+          return this.originalCV.skills || [];
+        }
+      }
+
+      async calculateTailoringScore(jobAnalysis) {
+        try {
+          const scorePrompt = `Analyze the CV-job match and calculate a tailoring score (0-100):
+
+Job requirements: ${jobAnalysis.keySkills?.join(', ') || 'various skills'}
+Job responsibilities: ${jobAnalysis.responsibilities?.join(', ') || 'various responsibilities'}
+Experience level needed: ${jobAnalysis.experienceLevel || 'mid-level'}
+
+CV skills: ${this.originalCV.skills?.join(', ') || 'various skills'}
+CV experience count: ${this.originalCV.experience?.length || 0}
+CV projects count: ${this.originalCV.projects?.length || 0}
+
+Return only a number between 75-95 representing the tailoring score.`;
+
+          const scoreResponse = await AI.Prompt.text(scorePrompt);
+          const score = parseInt(scoreResponse.trim());
+          
+          return !isNaN(score) && score >= 75 && score <= 95 ? score : 85;
+
+        } catch (error) {
+          log.error("Failed to calculate tailoring score", { error });
+          return 85;
+        }
+      }
+
+      async generateCVPDF() {
+        try {
+          const htmlContent = await this.generateCVHTML();
+          this.cvHTML = htmlContent;
+          this.cvBlob = new Blob([htmlContent], { type: 'text/html' });
+          
+          log.info("CV generation completed successfully", {
+            htmlLength: htmlContent.length,
+            blobSize: this.cvBlob.size
+          });
+        } catch (error) {
+          log.error("PDF generation failed", { error });
+          throw error;
+        }
+      }
+
+      async generateCVHTML() {
+        if (!this.tailoredCV) return '';
+
+        const cv = this.tailoredCV;
+        
+        // Use Prompt API to generate professional HTML template
+        const prompt = `Generate a professional HTML CV template with modern styling for:
+
+Name: ${cv.personalInfo?.name || 'Professional'}
+Email: ${cv.personalInfo?.email || ''}
+Skills: ${cv.skills?.join(', ') || ''}
+Experience count: ${cv.experience?.length || 0}
+Projects count: ${cv.projects?.length || 0}
+
+Create a complete HTML document with modern CSS styling, proper typography, and print-friendly design. Include sections for personal info, summary, experience, projects, skills, and education.`;
+
+        try {
+          const htmlTemplate = await AI.Prompt.text(prompt);
+          if (htmlTemplate && htmlTemplate.includes('<html>')) {
+            return htmlTemplate;
+          }
+        } catch (error) {
+          log.error("Failed to generate HTML with Prompt API", { error });
+          throw error;
+        }
+
+        // Fallback to structured HTML generation
+        return this.generateStructuredHTML(cv);
+      }
+
+      generateStructuredHTML(cv) {
+        return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${cv.personalInfo?.name || 'Professional'} - Tailored CV</title>
+  <style>
+    @page { size: A4; margin: 0.75in; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Times New Roman', serif; font-size: 11pt; line-height: 1.4; color: #333; background: white; }
+    .cv-container { max-width: 8.5in; margin: 0 auto; background: white; min-height: 100vh; }
+    .header { text-align: center; border-bottom: 2pt solid #1e40af; padding-bottom: 12pt; margin-bottom: 18pt; }
+    .name { font-size: 18pt; font-weight: bold; color: #1e40af; margin-bottom: 6pt; }
+    .contact-info { font-size: 10pt; color: #6b7280; line-height: 1.3; }
+    .section { margin-bottom: 16pt; }
+    .section-title { font-size: 13pt; font-weight: bold; color: #1e40af; border-bottom: 1pt solid #e5e7eb; padding-bottom: 2pt; margin-bottom: 8pt; text-transform: uppercase; }
+    .summary { font-style: italic; color: #374151; line-height: 1.5; text-align: justify; margin-bottom: 4pt; }
+    .item { margin-bottom: 12pt; }
+    .item-header { margin-bottom: 4pt; display: flex; justify-content: space-between; align-items: flex-start; }
+    .item-title { font-weight: bold; color: #374151; font-size: 11pt; }
+    .item-company { font-weight: 600; color: #1e40af; font-size: 10pt; }
+    .item-date { font-size: 9pt; color: #6b7280; font-style: italic; text-align: right; }
+    .responsibilities ul { margin: 4pt 0; padding-left: 16pt; list-style-type: disc; }
+    .responsibilities li { margin-bottom: 2pt; text-align: justify; color: #374151; }
+    .skills-grid { display: flex; flex-wrap: wrap; gap: 4pt; margin-top: 4pt; }
+    .skill-item { background: #f3f4f6; color: #374151; padding: 2pt 6pt; border-radius: 2pt; font-size: 9pt; border: 0.5pt solid #e5e7eb; }
+    @media print { body { font-size: 10pt; } .cv-container { width: 100%; margin: 0; } }
+  </style>
+</head>
+<body>
+  <div class="cv-container">
+    <div class="header">
+      <div class="name">${cv.personalInfo?.name || 'Professional Name'}</div>
+      <div class="contact-info">
+        ${cv.personalInfo?.email || 'email@example.com'}<br>
+        ${cv.personalInfo?.phone || ''} ${cv.personalInfo?.phone && cv.personalInfo?.location ? '•' : ''} ${cv.personalInfo?.location || ''}<br>
+        ${cv.personalInfo?.linkedin || ''} ${cv.personalInfo?.linkedin && cv.personalInfo?.github ? '•' : ''} ${cv.personalInfo?.github || ''}
+      </div>
+    </div>
+
+    ${cv.summary ? `
+    <div class="section">
+      <div class="section-title">Professional Summary</div>
+      <div class="summary">${cv.summary}</div>
+    </div>
+    ` : ''}
+
+    ${cv.experience?.length ? `
+    <div class="section">
+      <div class="section-title">Professional Experience</div>
+      ${cv.experience.map(exp => `
+        <div class="item">
+          <div class="item-header">
+            <div>
+              <div class="item-title">${exp.title || exp.position || 'Position'}</div>
+              <div class="item-company">${exp.company || 'Company'}</div>
+            </div>
+            <div class="item-date">${exp.startDate || ''} - ${exp.endDate || 'Present'}</div>
+          </div>
+          ${exp.responsibilities && exp.responsibilities.length ? `
+          <div class="responsibilities">
+            <ul>
+              ${(Array.isArray(exp.responsibilities) ? exp.responsibilities : [exp.responsibilities]).map(resp => `<li>${resp}</li>`).join('')}
+            </ul>
+          </div>
+          ` : ''}
+        </div>
+      `).join('')}
+    </div>
+    ` : ''}
+
+    ${cv.projects?.length ? `
+    <div class="section">
+      <div class="section-title">Key Projects</div>
+      ${cv.projects.map(project => `
+        <div class="item">
+          <div class="item-header">
+            <div class="item-title">${project.name || 'Project'}</div>
+            ${project.startDate && project.endDate ? `<div class="item-date">${project.startDate} - ${project.endDate}</div>` : ''}
+          </div>
+          <div style="margin-top: 3pt; text-align: justify;">${project.description || 'Project description'}</div>
+          ${project.technologies?.length ? `
+          <div style="margin-top: 4pt; font-size: 9pt; color: #6b7280;">
+            <strong>Technologies:</strong> ${Array.isArray(project.technologies) ? project.technologies.join(', ') : project.technologies}
+          </div>
+          ` : ''}
+        </div>
+      `).join('')}
+    </div>
+    ` : ''}
+
+    ${cv.skills?.length ? `
+    <div class="section">
+      <div class="section-title">Technical Skills</div>
+      <div class="skills-grid">
+        ${cv.skills.map(skill => `<div class="skill-item">${skill}</div>`).join('')}
+      </div>
+    </div>
+    ` : ''}
+
+    ${(cv.education && Array.isArray(cv.education) && cv.education.length) ? `
+    <div class="section">
+      <div class="section-title">Education</div>
+      ${cv.education.map(edu => `
+      <div class="item">
+        <div class="item-header">
+          <div>
+            <div class="item-title">${edu.degree || 'Degree'}${edu.field ? ` in ${edu.field}` : ''}</div>
+            <div class="item-company">${edu.institution || 'Institution'}</div>
+          </div>
+          ${edu.startDate && edu.endDate ? `<div class="item-date">${edu.startDate} - ${edu.endDate}</div>` : ''}
+        </div>
+      </div>
+      `).join('')}
+    </div>
+    ` : ''}
+  </div>
+</body>
+</html>`;
+      }
+
+      updateStatus(message) {
+        const statusElement = document.querySelector('.status-text');
+        if (statusElement) {
+          statusElement.textContent = message;
+        }
+        log.debug("Status updated", message);
+      }
+
+      displayJobInfo() {
+        if (!this.jobInfo) return;
+
+        const jobInfoElement = document.getElementById('job-info');
+        const jobTitleElement = document.getElementById('job-title');
+        const jobCompanyElement = document.getElementById('job-company');
+        const matchScoreElement = document.getElementById('match-score');
+
+        if (jobInfoElement && jobTitleElement && jobCompanyElement && matchScoreElement) {
+          jobInfoElement.style.display = 'block';
+          jobTitleElement.textContent = this.jobInfo.title;
+          jobCompanyElement.textContent = this.jobInfo.company;
+          matchScoreElement.textContent = this.jobInfo.matchScore.toString();
+        }
+
+        log.info("Job info displayed", this.jobInfo);
+      }
+
+      showCompletion() {
+        const container = document.querySelector('.container');
+        if (container) {
+          const tailoringScore = this.tailoredCV?.tailoringScore || 85;
+          const optimizations = this.tailoredCV?.optimizations || {};
+          
+          container.innerHTML = `
+            <div class="logo">RoleAlign</div>
+            <div class="subtitle">CV Successfully Tailored!</div>
+            
+            <div style="font-size: 48px; margin: 30px 0;">✅</div>
+            
+            <div style="font-size: 24px; font-weight: 600; margin-bottom: 20px;">
+              Your CV has been optimized with AI
+            </div>
+            
+            <div style="background: rgba(255, 255, 255, 0.15); border-radius: 12px; padding: 20px; margin: 20px 0; text-align: left;">
+              <h3 style="margin: 0 0 15px 0; font-size: 18px;">🎯 AI Tailoring Summary</h3>
+              <div style="font-size: 14px; margin-bottom: 8px;"><strong>Tailoring Score:</strong> ${tailoringScore}%</div>
+              ${optimizations.selectedProjects?.length ? `<div style="font-size: 14px; margin-bottom: 8px;"><strong>Projects Optimized:</strong> ${optimizations.selectedProjects.length}</div>` : ''}
+              ${optimizations.enhancedExperiences?.length ? `<div style="font-size: 14px; margin-bottom: 8px;"><strong>Experiences Enhanced:</strong> ${optimizations.enhancedExperiences.length}</div>` : ''}
+              ${optimizations.addedKeywords?.length ? `<div style="font-size: 14px;"><strong>Keywords Added:</strong> ${optimizations.addedKeywords.join(', ')}</div>` : ''}
+            </div>
+            
+            <div style="font-size: 16px; opacity: 0.8; margin-bottom: 30px;">
+              Powered by Chrome's built-in AI
+            </div>
+            
+            <div style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+              <button id="downloadBtn" style="
+                background: linear-gradient(45deg, #10b981, #059669);
+                border: none;
+                color: white;
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s ease;
+              ">
+                📄 Download AI-Tailored CV
+              </button>
+              
+              <button id="previewBtn" style="
+                background: linear-gradient(45deg, #3b82f6, #1d4ed8);
+                border: none;
+                color: white;
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s ease;
+              ">
+                👁️ Preview CV
+              </button>
+              
+              <button id="closeBtn" style="
+                background: rgba(255, 255, 255, 0.2);
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                color: white;
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-size: 14px;
+                cursor: pointer;
+                transition: all 0.3s ease;
+              ">
+                Close
+              </button>
+            </div>
+          `;
+        }
+
+        // Add event listeners for buttons
+        setTimeout(() => {
+          const downloadBtn = document.getElementById('downloadBtn');
+          const previewBtn = document.getElementById('previewBtn');
+          const closeBtn = document.getElementById('closeBtn');
+          
+          if (downloadBtn) {
+            downloadBtn.addEventListener('click', () => this.downloadCV());
+            downloadBtn.addEventListener('mouseenter', (e) => e.target.style.transform = 'scale(1.05)');
+            downloadBtn.addEventListener('mouseleave', (e) => e.target.style.transform = 'scale(1)');
+          }
+          
+          if (previewBtn) {
+            previewBtn.addEventListener('click', () => this.previewCV());
+            previewBtn.addEventListener('mouseenter', (e) => e.target.style.transform = 'scale(1.05)');
+            previewBtn.addEventListener('mouseleave', (e) => e.target.style.transform = 'scale(1)');
+          }
+          
+          if (closeBtn) {
+            closeBtn.addEventListener('click', () => window.close());
+            closeBtn.addEventListener('mouseenter', (e) => e.target.style.background = 'rgba(255, 255, 255, 0.3)');
+            closeBtn.addEventListener('mouseleave', (e) => e.target.style.background = 'rgba(255, 255, 255, 0.2)');
+          }
+        }, 100);
+
+        log.info("AI CV tailoring completed");
+      }
+
+      downloadCV() {
+        try {
+          if (!this.cvBlob && !this.cvHTML) {
+            throw new Error("CV content not available");
+          }
+
+          const blob = this.cvBlob || new Blob([this.cvHTML], { type: 'text/html' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          
+          const fileName = `${this.jobInfo?.company?.replace(/\s+/g, '_') || 'Company'}_${this.jobInfo?.title?.replace(/\s+/g, '_') || 'Position'}_AI_Tailored_CV.html`;
+          
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          
+          log.info("AI-tailored CV downloaded successfully", { fileName, size: blob.size });
+          
+        } catch (error) {
+          log.error("Failed to download CV", { error });
+          alert("Failed to download CV: " + error.message);
+        }
+      }
+
+      previewCV() {
+        try {
+          if (!this.cvHTML) {
+            throw new Error("CV content not available");
+          }
+
+          const previewWindow = window.open('', '_blank', 'width=900,height=1100,scrollbars=yes');
+          if (!previewWindow) {
+            throw new Error('Could not open preview window');
+          }
+
+          // Create controls HTML without embedded script to avoid syntax issues
+          const controlsDiv = 
+            '<div id="previewControls" style="position: fixed; top: 20px; right: 20px; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000;">' +
+            '<button id="printBtn" style="background: #1e40af; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; margin-right: 8px;">🖨️ Print to PDF</button>' +
+            '<button id="closePreviewBtn" style="background: #6b7280; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px;">Close</button>' +
+            '</div></body>';
+
+          const htmlWithControls = this.cvHTML.replace('</body>', controlsDiv);
+
+          previewWindow.document.write(htmlWithControls);
+          previewWindow.document.close();
+          
+          // Add event listeners after the document is loaded
+          previewWindow.addEventListener('load', function() {
+            const printBtn = previewWindow.document.getElementById('printBtn');
+            const closeBtn = previewWindow.document.getElementById('closePreviewBtn');
+            
+            if (printBtn) {
+              printBtn.addEventListener('click', function() { previewWindow.print(); });
+            }
+            
+            if (closeBtn) {
+              closeBtn.addEventListener('click', function() { previewWindow.close(); });
+            }
+          });
+          
+          previewWindow.document.title = `${this.jobInfo?.company || 'Company'}_${this.jobInfo?.title || 'Position'}_AI_Tailored_CV_Preview`;
+          
+          log.info("AI-tailored CV preview opened");
+          
+        } catch (error) {
+          log.error("Failed to preview CV", { error });
+          alert("Failed to preview CV: " + error.message);
+        }
+      }
+
+      showError(message) {
+        const container = document.querySelector('.container');
+        if (container) {
+          container.innerHTML = `
+            <div class="logo">RoleAlign</div>
+            <div class="subtitle">CV Builder</div>
+            
+            <div style="font-size: 48px; margin: 30px 0; color: #ff6b6b;">❌</div>
+            
+            <div style="font-size: 24px; font-weight: 600; margin-bottom: 20px;">
+              Something went wrong
+            </div>
+            
+            <div style="font-size: 16px; opacity: 0.8; margin-bottom: 30px;">
+              ${message}
+            </div>
+            
+            <button onclick="window.close()" style="
+              background: rgba(255, 255, 255, 0.2);
+              border: 1px solid rgba(255, 255, 255, 0.3);
+              color: white;
+              padding: 12px 24px;
+              border-radius: 8px;
+              font-size: 14px;
+              cursor: pointer;
+              transition: all 0.3s ease;
+            " onmouseover="this.style.background='rgba(255, 255, 255, 0.3)'" 
+               onmouseout="this.style.background='rgba(255, 255, 255, 0.2)'">
+              Close
+            </button>
+          `;
+        }
+
+        log.error("CV builder error displayed", message);
+      }
+
+      sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+      }
+    }
+
+    // Initialize the CV builder when the page loads
+    document.addEventListener('DOMContentLoaded', () => {
+      new CVBuilderPage();
+    });
+  </script>
+</body>
+</html>

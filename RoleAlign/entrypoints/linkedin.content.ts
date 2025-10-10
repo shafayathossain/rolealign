@@ -206,7 +206,7 @@ function createBadge(score: number, matchDetails?: any): HTMLElement {
     // Don't trigger if close button was clicked
     if ((e.target as Element)?.id === 'badge-close') return;
     log.info("Badge clicked - showing detailed match breakdown");
-    showMatchDetails(matchDetails);
+    showMatchDetails(matchDetails, score);
   });
 
   document.body.appendChild(badge);
@@ -214,7 +214,7 @@ function createBadge(score: number, matchDetails?: any): HTMLElement {
 }
 
 /** Show detailed match breakdown popup */
-function showMatchDetails(matchDetails: any) {
+function showMatchDetails(matchDetails: any, score?: number) {
   if (!matchDetails) {
     log.warn("No match details available");
     return;
@@ -334,6 +334,45 @@ function showMatchDetails(matchDetails: any) {
     headerDiv.insertAdjacentHTML('afterend', jobInfoHTML);
   }
 
+  // Add Tailored CV button if score is 80% or higher
+  if (score && score >= 80) {
+    const tailoredCVButtonHTML = `
+      <div style="margin: 20px 0;">
+        <button id="tailored-cv-btn" style="
+          background: linear-gradient(45deg, #4f46e5, #7c3aed);
+          color: white;
+          border: none;
+          padding: 14px 28px;
+          border-radius: 10px;
+          font-size: 16px;
+          font-weight: 600;
+          cursor: pointer;
+          width: 100%;
+          transition: all 0.3s ease;
+          box-shadow: 0 4px 15px rgba(79, 70, 229, 0.3);
+        " onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 6px 20px rgba(79, 70, 229, 0.4)';" 
+           onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 4px 15px rgba(79, 70, 229, 0.3)';">
+          🎯 Generate Tailored CV
+        </button>
+      </div>
+    `;
+    
+    // Insert the button after the job info section
+    const lastSection = modal.querySelector('div[style*="margin-bottom: 20px"]');
+    if (lastSection) {
+      lastSection.insertAdjacentHTML('afterend', tailoredCVButtonHTML);
+    }
+
+    // Add click handler for the Tailored CV button
+    const tailoredCVBtn = modal.querySelector('#tailored-cv-btn');
+    if (tailoredCVBtn) {
+      tailoredCVBtn.addEventListener('click', () => {
+        log.info("Tailored CV button clicked", { score, jobInfo });
+        openCVBuilder(score, jobTitle, companyName, jobUrl, matchDetails);
+      });
+    }
+  }
+
   // Close popup handlers
   popup.addEventListener('click', (e) => {
     if (e.target === popup) popup.remove();
@@ -342,6 +381,43 @@ function showMatchDetails(matchDetails: any) {
   const closeBtn = modal.querySelector('#close-popup');
   if (closeBtn) {
     closeBtn.addEventListener('click', () => popup.remove());
+  }
+}
+
+/** Open CV Builder page with job information */
+async function openCVBuilder(score: number, jobTitle: string, companyName: string, jobUrl: string, matchDetails: any) {
+  try {
+    // Extract job description HTML from the current page
+    const jobDescriptionElement = document.querySelector('.jobs-box__html-content');
+    const jobDescriptionHTML = jobDescriptionElement ? jobDescriptionElement.innerHTML : '';
+    const jobDescriptionText = jobDescriptionElement ? jobDescriptionElement.textContent?.trim() : '';
+
+    const jobData = {
+      title: jobTitle,
+      company: companyName,
+      url: jobUrl,
+      matchScore: score,
+      matchDetails: {
+        ...matchDetails,
+        jobDescriptionHTML: jobDescriptionHTML,
+        jobDescriptionText: jobDescriptionText
+      }
+    };
+
+    log.info("Opening CV Builder with job description", { 
+      jobData,
+      htmlLength: jobDescriptionHTML.length,
+      textLength: jobDescriptionText?.length || 0
+    });
+    
+    // Use messaging to ask background script to open the CV builder page
+    await send("content", "OPEN_CV_BUILDER", { jobData }, { timeoutMs: 5000 });
+    
+  } catch (error) {
+    log.error("Failed to open CV Builder", { error });
+    
+    // Fallback: show simple alert
+    alert("CV Builder will be available soon! Your match score is " + score + "%");
   }
 }
 

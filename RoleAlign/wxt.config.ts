@@ -14,7 +14,7 @@ export default defineConfig({
     },
 
     // minimal permissions
-    permissions: ["storage", "activeTab", "scripting"],
+    permissions: ["storage", "activeTab", "scripting", "tabs"],
 
     // host permissions only for sites you parse
     host_permissions: [
