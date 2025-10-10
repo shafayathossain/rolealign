@@ -154,6 +154,24 @@ async function ensurePromptSession(opts?: ProgressCallbacks) {
   return promptSessionSingleton!;
 }
 
+function releasePromptSession() {
+  if (promptSessionSingleton) {
+    log.debug("Releasing Language Model session");
+    try {
+      // Try to destroy/close the session if methods are available
+      if (typeof promptSessionSingleton.destroy === 'function') {
+        promptSessionSingleton.destroy();
+      } else if (typeof promptSessionSingleton.close === 'function') {
+        promptSessionSingleton.close();
+      }
+    } catch (err) {
+      log.warn("Error releasing session", err);
+    }
+    promptSessionSingleton = null;
+    log.debug("Language Model session released");
+  }
+}
+
 export const Prompt = {
   async text(input: string, opts: PromptOptions = {}): Promise<string> {
     log.debug("Prompt.text()", { len: input.length });
@@ -604,4 +622,5 @@ export const AI = {
   Translate,
   Availability: AvailabilityHelpers,
   detectLanguage,
+  releasePromptSession,
 };

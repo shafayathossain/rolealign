@@ -96,7 +96,7 @@ async function analyzeJobPage(ctx: any, url: string) {
       site: "indeed",
       url: url
     }, { 
-      timeoutMs: 30_000 
+      timeoutMs: 120_000 
     });
 
     log.info("Job analysis completed", { 

@@ -75,7 +75,7 @@ function AppContent() {
         log.info("Initializing popup...");
         
         // Get stored CV
-        const cvResult = await send("popup", "GET_CV", {}, { timeoutMs: 4000 });
+        const cvResult = await send("popup", "GET_CV", {}, { timeoutMs: 60000 });
         if (cvResult.cv) {
           setCvParsed(cvResult.cv);
         }
@@ -116,7 +116,7 @@ function AppContent() {
       setBusy("📋 Loading saved CV data...");
       setError("");
       
-      const result = await send("popup", "GET_CV", {}, { timeoutMs: 5000 });
+      const result = await send("popup", "GET_CV", {}, { timeoutMs: 60000 });
       
       if (result?.cv) {
         const cv = result.cv as any;
@@ -161,7 +161,7 @@ function AppContent() {
       setBusy("💾 Saving CV changes...");
       setError("");
       
-      await send("popup", "SAVE_CV", { cv: updatedCV }, { timeoutMs: 5000 });
+      await send("popup", "SAVE_CV", { cv: updatedCV }, { timeoutMs: 60000 });
       
       setEditingCV(updatedCV);
       setCvParsed(updatedCV);
@@ -192,7 +192,7 @@ function AppContent() {
 
       const result = await send("popup", "PROCESS_CV_SECTIONS", {
         sections: cvSections
-      }, { timeoutMs: 120000 });
+      }, { timeoutMs: 600000 });
 
       setCvParsed(result.cv);
       log.info("CV sections processed and saved successfully", result);
@@ -218,7 +218,7 @@ function AppContent() {
 
       const result = await send("popup", "ANALYZE_JOB", { 
         tabId: activeTab.id 
-      }, { timeoutMs: 15000 });
+      }, { timeoutMs: 120000 });
 
       setJob(result.job);
       log.info("Job analyzed successfully", result);
@@ -246,7 +246,7 @@ function AppContent() {
         cv: cvParsed,
         job: job,
         method: useAI ? "blend" : "deterministic"
-      }, { timeoutMs: 15000 });
+      }, { timeoutMs: 60000 });
 
       setScore(result);
       log.info("Match scored successfully", result);
@@ -273,7 +273,7 @@ function AppContent() {
       const result = await send("popup", "GENERATE_TAILORED_CV", {
         cv: cvParsed,
         job: job
-      }, { timeoutMs: 12000 });
+      }, { timeoutMs: 60000 });
 
       setTailored(typeof result === 'string' ? result : result.text || JSON.stringify(result));
       log.info("CV tailored successfully");

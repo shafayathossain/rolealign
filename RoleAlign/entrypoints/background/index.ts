@@ -398,7 +398,7 @@ export default defineBackground({
 
 Text: ${text}`;
               
-              structuredData = await AI.Prompt.text(extractPrompt, { timeoutMs: 30000 });
+              structuredData = await AI.Prompt.text(extractPrompt, { timeoutMs: 60000 });
             } else if (sectionName === 'projects') {
               const extractPrompt = `Extract project details from this text into a structured format. Preserve ALL specific details including project names, technologies, and achievements. Format as JSON:
 
@@ -414,7 +414,7 @@ Text: ${text}`;
 
 Text: ${text}`;
               
-              structuredData = await AI.Prompt.text(extractPrompt, { timeoutMs: 30000 });
+              structuredData = await AI.Prompt.text(extractPrompt, { timeoutMs: 60000 });
             } else if (sectionName === 'education') {
               const extractPrompt = `Extract education details from this text into a structured format. Preserve ALL specific details including institution names, degrees, and dates. Format as JSON:
 
@@ -431,14 +431,14 @@ Text: ${text}`;
 
 Text: ${text}`;
               
-              structuredData = await AI.Prompt.text(extractPrompt, { timeoutMs: 30000 });
+              structuredData = await AI.Prompt.text(extractPrompt, { timeoutMs: 60000 });
             } else {
               // For other sections, use summarization to clean up while preserving key info
               structuredData = await AI.Summarize.text(text, {
                 type: "key-points",
                 format: "markdown", 
                 length: "medium",
-                timeoutMs: 30000
+                timeoutMs: 60000
               });
             }
             
@@ -451,7 +451,7 @@ Text: ${text}`;
             // Extract skills from each section using prompt API
             try {
               const skillsPrompt = `Extract technical skills, technologies, tools, and programming languages from this text. Return only a comma-separated list of skills, no explanations:\n\n${text}`;
-              const skillsText = await AI.Prompt.text(skillsPrompt, { timeoutMs: 15000 });
+              const skillsText = await AI.Prompt.text(skillsPrompt, { timeoutMs: 60000 });
               const sectionSkills = skillsText
                 .split(',')
                 .map(skill => skill.trim())
@@ -701,36 +701,68 @@ Text: ${text}`;
           let jobTitleText = '';
           let companyNameText = '';
           
-          // Look for the job description div with the exact classes you specified
-          const jobDescMatch = html.match(/<div[^>]*class="[^"]*jobs-box__html-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
-          if (jobDescMatch) {
-            jobDescriptionHTML = jobDescMatch[1];
-            log.info("Found job description div", {
-              htmlLength: jobDescriptionHTML.length,
-              htmlPreview: jobDescriptionHTML.substring(0, 200) + "..."
+          // Enhanced job description extraction - capture much more content
+          const jobDescPatterns = [
+            // Primary: Capture everything from job-details div to end of content
+            /<div[^>]*id="job-details"[^>]*>([\s\S]*?)(?=<\/div>\s*<\/div>\s*(?:<\/div>)*\s*$)/i,
+            // Alternative: Look for the full container with all nested content
+            /<div[^>]*class="[^"]*jobs-box__html-content[^"]*"[^>]*>([\s\S]*)/i,
+            // Capture from "About the job" to end of significant content
+            /(About the job[\s\S]*?)(?=<\/div>\s*<\/div>|$)/i,
+            // Look for substantial text blocks that include job requirements
+            /<div[^>]*>[\s\S]*?(About the job[\s\S]*?(?:Requirements|Experience|Skills|Qualifications)[\s\S]*?)</i,
+            // Standard fallbacks
+            /<div[^>]*class="[^"]*jobs-description-content__text[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+            /<div[^>]*class="[^"]*jobs-description__container[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+            /<section[^>]*class="[^"]*jobs-description[^"]*"[^>]*>([\s\S]*?)<\/section>/i
+          ];
+          
+          for (const [index, pattern] of jobDescPatterns.entries()) {
+            const match = html.match(pattern);
+            if (match && match[1] && match[1].trim().length > 50) {
+              jobDescriptionHTML = match[1];
+              log.info(`Found job description with pattern ${index + 1}`, {
+                htmlLength: jobDescriptionHTML.length,
+                htmlPreview: jobDescriptionHTML.substring(0, 200) + "...",
+                patternUsed: `pattern_${index + 1}`
+              });
+              break;
+            }
+          }
+          
+          // If no patterns worked, try a more liberal approach for the specific structure we see
+          if (!jobDescriptionHTML) {
+            log.warn("Standard patterns failed, trying liberal extraction", {
+              htmlLength: html.length,
+              hasJobDetails: html.includes('id="job-details"'),
+              hasJobsBox: html.includes('jobs-box__html-content')
             });
-          } else {
-            // Fallback: look for other job description containers
-            const fallbackMatches = [
-              /<div[^>]*class="[^"]*jobs-description-content__text[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-              /<div[^>]*class="[^"]*jobs-description__container[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-              /<section[^>]*class="[^"]*jobs-description[^"]*"[^>]*>([\s\S]*?)<\/section>/i
+            
+            // Try multiple liberal extraction approaches
+            const liberalPatterns = [
+              // Capture everything after job-details opening tag
+              /id="job-details"[^>]*>([\s\S]*)/i,
+              // Capture from About the job onwards
+              /(About the job[\s\S]*)/i,
+              // Capture any large text block containing job keywords
+              /([\s\S]*(?:responsibilities|requirements|experience|skills|qualifications)[\s\S]*)/i
             ];
             
-            for (const pattern of fallbackMatches) {
-              const match = html.match(pattern);
-              if (match) {
-                jobDescriptionHTML = match[1];
-                log.info("Found job description with fallback pattern", {
-                  htmlLength: jobDescriptionHTML.length
+            for (const pattern of liberalPatterns) {
+              const liberalMatch = html.match(pattern);
+              if (liberalMatch && liberalMatch[1] && liberalMatch[1].trim().length > 200) {
+                jobDescriptionHTML = liberalMatch[1];
+                log.info("Found job description with liberal extraction", {
+                  htmlLength: jobDescriptionHTML.length,
+                  htmlPreview: jobDescriptionHTML.substring(0, 200) + "..."
                 });
                 break;
               }
             }
-          }
-          
-          if (!jobDescriptionHTML) {
-            throw new Error("Could not find job description content in LinkedIn page");
+            
+            if (!jobDescriptionHTML) {
+              throw new Error("Could not find job description content in LinkedIn page");
+            }
           }
           
           // Also extract job title and company more accurately
@@ -784,28 +816,182 @@ Text: ${text}`;
             throw new Error(`Job description too short (${cleanedJobText.length} chars): ${cleanedJobText}`);
           }
           
-          // Take the job description text for summarization
-          const textForSummarization = cleanedJobText;
+          // INNOVATIVE SOLUTION: Sliding window technique with dynamic chunking
+          log.info("Using sliding window approach for content extraction", {
+            contentLength: cleanedJobText.length
+          });
+          
+          let jobSummary = "";
+          const WINDOW_SIZE = 10000; // Balanced size - larger but still within Chrome AI limits
+          const OVERLAP = 1000; // Proportional overlap to maintain context
+          const MAX_WINDOWS = 6; // Reasonable maximum for large content
+          const TIMEOUT_PER_WINDOW = 60000; // 60 seconds per window
+          
+          // Pre-calculate window count for timeout estimation
+          let estimatedWindowCount = Math.ceil(cleanedJobText.length / (WINDOW_SIZE - OVERLAP));
+          estimatedWindowCount = Math.min(estimatedWindowCount, MAX_WINDOWS);
+          
+          // For very large content, use more aggressive chunking
+          if (cleanedJobText.length > 150000) {
+            log.info("Large content detected, using aggressive chunking", {
+              contentLength: cleanedJobText.length
+            });
+          }
+          
+          const estimatedTimeout = estimatedWindowCount * TIMEOUT_PER_WINDOW;
+          const safetyBuffer = 30000; // 30 second safety buffer
+          const totalEstimatedTime = estimatedTimeout + safetyBuffer;
+          
+          log.info("Pre-calculated window estimation for timeout", {
+            contentLength: cleanedJobText.length,
+            estimatedWindowCount,
+            timeoutPerWindow: TIMEOUT_PER_WINDOW,
+            estimatedTimeout,
+            totalEstimatedTime
+          });
+          
+          try {
+            // Check API availability
+            const promptAvail = await AI.Availability.prompt();
+            const useAI = promptAvail !== "no" && promptAvail !== "unavailable";
+            
+            if (useAI) {
+              log.info("Processing content with sliding window technique");
+              
+              // Create sliding windows of content
+              const windows: string[] = [];
+              let position = 0;
+              
+              while (position < cleanedJobText.length && windows.length < MAX_WINDOWS) {
+                const windowEnd = Math.min(position + WINDOW_SIZE, cleanedJobText.length);
+                const window = cleanedJobText.substring(position, windowEnd);
+                
+                // Find natural break point - prioritize paragraph breaks for better context
+                if (windowEnd < cleanedJobText.length && windows.length < MAX_WINDOWS - 1) {
+                  // Look for paragraph breaks first (better context preservation)
+                  const paragraphBreak = window.lastIndexOf('\n\n');
+                  const sentenceBreak = window.lastIndexOf('. ');
+                  const lineBreak = window.lastIndexOf('\n');
+                  
+                  const breakPoint = paragraphBreak > WINDOW_SIZE * 0.6 ? paragraphBreak : 
+                                   sentenceBreak > WINDOW_SIZE * 0.6 ? sentenceBreak + 1 : 
+                                   lineBreak > WINDOW_SIZE * 0.6 ? lineBreak : -1;
+                  
+                  if (breakPoint > 0) {
+                    windows.push(window.substring(0, breakPoint + 1));
+                    position += breakPoint + 1 - OVERLAP;
+                  } else {
+                    windows.push(window);
+                    position += WINDOW_SIZE - OVERLAP;
+                  }
+                } else {
+                  // Last window or forced break - take the rest
+                  windows.push(window);
+                  break;
+                }
+              }
+              
+              log.info("Created content windows", {
+                windowCount: windows.length,
+                windowSizes: windows.map(w => w.length),
+                actualVsEstimated: `${windows.length}/${estimatedWindowCount}`
+              });
+              
+              // Process each window and collect insights
+              const insights: string[] = [];
+              
+              for (let i = 0; i < windows.length; i++) {
+                try {
+                  const windowPrompt = `Extract job info from text:
+
+${windows[i]}
+
+List: title, company, skills, requirements. If none found, say "Nothing".`;
+                  
+                  const windowResult = await AI.Prompt.text(windowPrompt, {
+                    timeoutMs: TIMEOUT_PER_WINDOW
+                  });
+                  
+                  if (!windowResult.toLowerCase().includes('nothing') && windowResult.trim().length > 5) {
+                    insights.push(windowResult);
+                  }
+                  
+                  log.debug(`Processed window ${i + 1}/${windows.length}`);
+                  
+                } catch (windowError: any) {
+                  log.warn(`Window ${i + 1} processing failed`, {
+                    error: windowError?.message
+                  });
+                }
+              }
+              
+              // Combine insights from all windows
+              if (insights.length > 0) {
+                jobSummary = insights.join('\n\n');
+                log.info("Successfully extracted job information from windows", {
+                  insightsCount: insights.length
+                });
+              } else {
+                throw new Error("No insights extracted from windows");
+              }
+              
+            } else {
+              throw new Error("AI not available");
+            }
+            
+          } catch (error: any) {
+            log.warn("AI processing failed, using statistical extraction", {
+              error: error?.message
+            });
+            
+            // FALLBACK: Statistical extraction based on sentence patterns
+            const sentences = cleanedJobText.split(/[.!?]\s+/);
+            const sentenceScores = new Map<string, number>();
+            
+            // Score sentences by relevance indicators (no hardcoded keywords)
+            for (const sentence of sentences) {
+              if (sentence.length < 20 || sentence.length > 500) continue;
+              
+              let score = 0;
+              
+              // Check for capitalized words (often important terms)
+              const capitalizedWords = (sentence.match(/\b[A-Z][a-zA-Z]+\b/g) || []).length;
+              score += capitalizedWords * 2;
+              
+              // Check for numbers (experience years, team size, etc)
+              const numbers = (sentence.match(/\b\d+\b/g) || []).length;
+              score += numbers * 3;
+              
+              // Check for punctuation patterns (lists, requirements)
+              if (sentence.includes(':')) score += 5;
+              if (sentence.includes(',')) score += 1;
+              if (sentence.includes('•') || sentence.includes('-')) score += 3;
+              
+              // Length bonus (moderate length sentences often contain key info)
+              if (sentence.length > 50 && sentence.length < 200) score += 2;
+              
+              sentenceScores.set(sentence, score);
+            }
+            
+            // Get top scoring sentences
+            const topSentences = Array.from(sentenceScores.entries())
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 30)
+              .map(([sentence]) => `• ${sentence.trim()}`);
+            
+            jobSummary = topSentences.join('\n') || "Unable to extract job information.";
+            
+            log.info("Statistical extraction completed", {
+              totalSentences: sentences.length,
+              extractedSentences: topSentences.length
+            });
+          }
           
           // Store cleanedJobText for later use
           const cleanedText = cleanedJobText;
           
-          log.info("Starting Summarization API call", {
-            textLength: textForSummarization.length,
-            context: "Extract job details from LinkedIn page"
-          });
-          
-          // Use Summarization API to extract job details - focusing only on the actual job content
-          const jobSummary = await AI.Summarize.text(textForSummarization, {
-            type: "key-points",
-            format: "markdown", 
-            length: "long",
-            context: "Extract job requirements, technical skills, responsibilities, and qualifications from this job posting. Focus ONLY on technical skills like programming languages, frameworks, tools, databases, cloud platforms, development methodologies, and specific technologies required for this position. Ignore any LinkedIn platform content or unrelated information.",
-            timeoutMs: 30000
-          });
-          
-          log.info("✅ Summarize API response received successfully", {
-            inputLength: textForSummarization.length,
+          log.info("✅ Job extraction completed", {
+            originalLength: cleanedJobText.length,
             summaryLength: jobSummary.length,
             summaryPreview: jobSummary.substring(0, 300) + "...",
             fullSummary: jobSummary
@@ -835,7 +1021,7 @@ Return ONLY a valid JSON object (no markdown, no code fences) with job title and
 }`;
 
               const jobDetails = await AI.Prompt.json(jobDetailsPrompt, { 
-                timeoutMs: 15000,
+                timeoutMs: 60000,
                 schema: {
                   type: "object",
                   properties: {
@@ -882,7 +1068,10 @@ Return ONLY a valid JSON object (no markdown, no code fences) with job title and
             extras: { 
               aiExtracted: true,
               summarizerUsed: true,
-              originalTextLength: cleanedText.length
+              originalTextLength: cleanedText.length,
+              windowCount: estimatedWindowCount,
+              estimatedTimeoutMs: totalEstimatedTime,
+              timeoutPerWindow: TIMEOUT_PER_WINDOW
             }
           };
           
@@ -1034,45 +1223,119 @@ Return ONLY a valid JSON object (no markdown, no code fences) with job title and
             chunkLength: chunk.length
           });
           
-          // Use Chrome's AI APIs if available, otherwise fall back to regex
-          if (useAI && promptAvailable !== "no" && summarizerAvailable !== "no") {
+          // Use sliding window for skill extraction too
+          if (useAI && promptAvailable !== "no") {
             try {
-              log.debug("Using Chrome Summarization + Prompt APIs for skill extraction");
-            
-            // First, use Summarization API to extract key technical points
-            let technicalSummary = await AI.Summarize.text(chunk, {
-              type: "key-points",
-              format: "markdown", 
-              length: "long",
-              context: "You are extracting technical requirements from a job posting. Focus ONLY on technical skills, technologies, frameworks, programming languages, platforms, and development tools that are explicitly mentioned. IGNORE company information, job responsibilities, soft skills, and general business content. Extract technical terms exactly as written: React Native, Flutter, Android, iOS, Java, Swift, Kotlin, API, CI/CD, etc. Prioritize concrete technical requirements over general descriptions.",
-              timeoutMs: 20000
-            });
+              log.debug("Using windowed skill extraction");
+              
+              const SKILL_WINDOW = 4000; // Smaller windows for skill extraction
+              let technicalSummary = '';
+              
+              if (chunk.length > SKILL_WINDOW) {
+                // Take multiple samples from different parts of the chunk
+                const samples: string[] = [];
+                const sampleCount = 3;
+                const step = Math.floor(chunk.length / sampleCount);
+                
+                for (let i = 0; i < sampleCount; i++) {
+                  const start = i * step;
+                  const end = Math.min(start + SKILL_WINDOW, chunk.length);
+                  samples.push(chunk.substring(start, end));
+                }
+                
+                // Process each sample and combine results
+                const allSkills: string[] = [];
+                
+                for (const sample of samples) {
+                  try {
+                    const samplePrompt = `Extract technical terms from this text. List any technologies, tools, languages, or frameworks mentioned.
+
+Text:
+${sample}
+
+List found terms (comma-separated):`;
+                    
+                    const sampleResult = await AI.Prompt.text(samplePrompt, {
+                      timeoutMs: 30000
+                    });
+                    
+                    const skills = sampleResult.split(/[,\n]/).map(s => s.trim()).filter(s => s.length > 0);
+                    allSkills.push(...skills);
+                  } catch (sampleError) {
+                    log.debug("Sample extraction failed", { error: sampleError });
+                  }
+                }
+                
+                // Deduplicate skills
+                const uniqueSkills = [...new Set(allSkills)];
+                technicalSummary = uniqueSkills.join(', ');
+                
+                log.debug("Windowed skill extraction complete", {
+                  samplesProcessed: samples.length,
+                  skillsFound: uniqueSkills.length
+                });
+              } else {
+                // Chunk is small enough to process directly
+                const skillPrompt = `Extract technical terms from this text. List any technologies, tools, languages, or frameworks mentioned.
+
+Text:
+${chunk}
+
+List found terms (comma-separated):`;
+                
+                technicalSummary = await AI.Prompt.text(skillPrompt, {
+                  timeoutMs: 60000
+                });
+              }
+              
+              log.debug("Skill extraction response received", {
+                summaryLength: technicalSummary.length
+              });
             
             log.debug("Summarization API response", {
               summary: technicalSummary,
               length: technicalSummary.length
             });
             
-            // Check if summarization failed
-            const summarizationFailures = [
-              'AI is currently unable to analyze',
-              'unable to process',
-              'cannot analyze',
-              'error occurred',
-              'failed to analyze'
-            ];
+            // Check if extraction returned valid results
+            const isValidResponse = technicalSummary && 
+              technicalSummary.trim().length > 5 && 
+              !technicalSummary.toLowerCase().includes('error') &&
+              !technicalSummary.toLowerCase().includes('unable');
             
-            const isSummarizationError = summarizationFailures.some(phrase => 
-              technicalSummary.toLowerCase().includes(phrase.toLowerCase())
-            );
-            
-            if (isSummarizationError || technicalSummary.trim().length < 50) {
-              log.warn("Summarization API failed, using original chunk directly", {
-                summary: technicalSummary,
-                chunkLength: cleanedJobText.length
-              });
-              // Use the original job text instead of the failed summary
-              technicalSummary = cleanedJobText;
+            if (!isValidResponse) {
+              log.warn("Invalid AI response, using statistical extraction");
+              
+              // Statistical extraction: find capitalized terms that appear multiple times
+              const words = chunk.split(/\s+/);
+              const termFrequency = new Map<string, number>();
+              
+              for (const word of words) {
+                // Clean the word
+                const cleaned = word.replace(/[^a-zA-Z0-9\.\-\_]/g, '');
+                
+                // Check if it looks like a technical term (capitalized, contains numbers, or has special patterns)
+                if (cleaned.length > 2 && cleaned.length < 30) {
+                  const hasCapital = /[A-Z]/.test(cleaned);
+                  const hasNumber = /\d/.test(cleaned);
+                  const hasDot = cleaned.includes('.');
+                  const hasHyphen = cleaned.includes('-');
+                  
+                  if (hasCapital || hasNumber || hasDot || hasHyphen) {
+                    const key = cleaned.toLowerCase();
+                    termFrequency.set(key, (termFrequency.get(key) || 0) + 1);
+                  }
+                }
+              }
+              
+              // Get terms that appear at least twice
+              const frequentTerms = Array.from(termFrequency.entries())
+                .filter(([_, count]) => count >= 2)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 30)
+                .map(([term]) => term);
+              
+              technicalSummary = frequentTerms.join(', ');
             }
             
             // Then use Prompt API to extract specific skills from the summary
@@ -1141,7 +1404,7 @@ OUTPUT: Comma-separated list of exact technical terms from the text
 
 Technical Skills:`;
             
-            const chunkSkillsText = await AI.Prompt.text(skillsPrompt, { timeoutMs: 15000 });
+            const chunkSkillsText = await AI.Prompt.text(skillsPrompt, { timeoutMs: 60000 });
             
             log.debug("Prompt API response for skills extraction", {
               response: chunkSkillsText,
@@ -1253,45 +1516,60 @@ RULE 1 - EXACT STRING MATCHES (case-insensitive):
 - If candidate skill and job skill are identical when lowercased → EXACT MATCH (confidence: 1.0)
 - Examples: "iOS" ↔ "ios", "JavaScript" ↔ "javascript"
 
-RULE 2 - PLATFORM DEVELOPMENT PATTERN:
-- If candidate has "[Platform] Development" and job needs "[Platform]" → SEMANTIC MATCH (confidence: 0.9)
-- Pattern: "X Development" matches "X" where X is a platform/technology name
-- Examples: "Android Development" ↔ "Android", "Web Development" ↔ "Web"
+RULE 2 - DEVELOPMENT TYPE MATCHING:
+- "Android Development" ↔ "mobile development" → SEMANTIC MATCH (confidence: 0.9)
+- "Web Development" ↔ "frontend development" → SEMANTIC MATCH (confidence: 0.9)
+- "X Development" matches "Y development" if X and Y are related technologies
 
-RULE 3 - API SKILLS PATTERN:
-- If candidate has API-related skill and job needs API-related skill → SEMANTIC MATCH (confidence: 0.8)
-- Patterns: "API Integration" ↔ "REST API", "API Integration" ↔ "API services"
-- Any skill containing "API" can match other "API" skills if contextually related
+RULE 3 - API VARIATIONS:
+- "RESTful APIs" ↔ "restful api" → SEMANTIC MATCH (confidence: 0.9)
+- "REST" ↔ "restful api" → SEMANTIC MATCH (confidence: 0.8)
+- "API Integration" ↔ "REST API" → SEMANTIC MATCH (confidence: 0.8)
+- Any API-related skills can match variations (REST, RESTful, API, etc.)
 
-RULE 4 - FRAMEWORK SPECIALIZATION PATTERN:
-- If candidate has specific framework and job needs generic framework category → SEMANTIC MATCH (confidence: 0.7)
-- Pattern: Specific framework matches "Mobile Frameworks", "Web Frameworks", etc.
-- Examples: Any mobile framework matches "Mobile Frameworks"
+RULE 4 - COMPOUND SKILL MATCHING:
+- If candidate has separate skills that combine to match job requirement → SEMANTIC MATCH (confidence: 0.8)
+- "Jetpack" + "Compose" ↔ "jetpack compose" → Use "Jetpack" as userSkill, "jetpack compose" as jobSkill
+- "CI/CD" ↔ "ci/cd" → EXACT MATCH (confidence: 1.0) - case insensitive
+- When multiple candidate skills combine, pick the most representative one as userSkill
 
-RULE 5 - TESTING/QA PATTERN:
-- If candidate has testing-related skill and job needs testing-related skill → SEMANTIC MATCH (confidence: 0.8)
-- Patterns: Skills containing "test", "testing", "quality", "QA" match each other
+RULE 5 - PLATFORM DEVELOPMENT PATTERN:
+- "Android Development" ↔ "Android" → SEMANTIC MATCH (confidence: 0.9)
+- "X Development" matches "X" where X is a platform/technology name
 
-RULE 6 - TOOL/METHODOLOGY PATTERN:
-- If skills are related development tools or methodologies → SEMANTIC MATCH (confidence: 0.7)
-- Examples: "DevOps" ↔ "CI/CD", deployment-related skills
+RULE 6 - TESTING/QA PATTERN:
+- Skills containing "test", "testing", "quality", "QA", "debug" match each other → SEMANTIC MATCH (confidence: 0.8)
+- "Code Review" ↔ "testing" → SEMANTIC MATCH (confidence: 0.7)
+- "Mockito" ↔ "testing" → SEMANTIC MATCH (confidence: 0.8)
+- "Mock" ↔ "testing" → SEMANTIC MATCH (confidence: 0.8)
+
+RULE 7 - FRAMEWORK SPECIALIZATION:
+- Specific framework matches generic category → SEMANTIC MATCH (confidence: 0.7)
+- Any mobile framework matches "Mobile Frameworks", "UI Frameworks"
 
 ALGORITHM INSTRUCTIONS:
 1. For each job skill, check against ALL candidate skills
-2. Apply rules 1-6 in order, take first match found
-3. Use exact confidence values specified
-4. Be consistent - same input should always produce same output
-5. Only match if there's genuine technical relationship
+2. Apply rules 1-7 in order, take first match found
+3. For RULE 4 (compound matching), check if multiple candidate skills combine to form the job skill
+4. Use exact confidence values specified
+5. Be consistent - same input should always produce same output
+6. Only match if there's genuine technical relationship
 
-OUTPUT FORMAT:
+OUTPUT FORMAT - RETURN ONLY VALID JSON ARRAY:
 [{
-  "userSkill": "exact skill from candidate list",
-  "jobSkill": "exact skill from job requirements",
+  "userSkill": "MUST be an exact string from the CANDIDATE SKILLS list above - copy it character for character",
+  "jobSkill": "MUST be an exact string from the JOB REQUIRED SKILLS list above - copy it character for character", 
   "matchType": "exact" or "semantic",
   "confidence": 0.8-1.0
 }]
 
-Be extremely conservative - no false positives.`;
+CRITICAL REQUIREMENTS:
+1. userSkill MUST be an EXACT copy of a skill from the CANDIDATE SKILLS list - do not modify, rephrase, or synthesize
+2. jobSkill MUST be an EXACT copy of a skill from the JOB REQUIRED SKILLS list - do not modify, rephrase, or synthesize
+3. Return ONLY the JSON array. No explanations, no text, no markdown formatting
+4. If no matches exist, return an empty array []
+
+Be extremely conservative - no false positives. Only return exact string copies from the provided lists.`;
             
             const schema = {
               type: "array",
@@ -1312,7 +1590,7 @@ Be extremely conservative - no false positives.`;
               jobSkill: string;
               matchType: string;
               confidence: number;
-            }>>(skillMatchingPrompt, { schema, timeoutMs: 20000 });
+            }>>(skillMatchingPrompt, { schema, timeoutMs: 60000 });
             
             log.debug("AI skill matching response", {
               matches: aiMatches,
@@ -1326,31 +1604,53 @@ Be extremely conservative - no false positives.`;
                 let userSkillExists = false;
                 let jobSkillExists = false;
                 
-                if (match.matchType === 'exact') {
-                  // For exact matches, require exact string match
-                  userSkillExists = cvSkills.some(skill => 
-                    skill.toLowerCase().trim() === match.userSkill.toLowerCase().trim()
-                  );
-                  jobSkillExists = uniqueJobSkills.some(skill => 
-                    skill.toLowerCase().trim() === match.jobSkill.toLowerCase().trim()
-                  );
-                } else {
-                  // For semantic matches, be more flexible
-                  userSkillExists = cvSkills.some(skill => {
-                    const skillLower = skill.toLowerCase().trim();
-                    const matchLower = match.userSkill.toLowerCase().trim();
-                    return skillLower === matchLower || 
-                           skillLower.includes(matchLower) || 
-                           matchLower.includes(skillLower);
-                  });
-                  
-                  jobSkillExists = uniqueJobSkills.some(skill => {
-                    const skillLower = skill.toLowerCase().trim();
-                    const matchLower = match.jobSkill.toLowerCase().trim();
-                    return skillLower === matchLower || 
-                           skillLower.includes(matchLower) || 
-                           matchLower.includes(skillLower);
-                  });
+                // Use flexible validation for both exact and semantic matches
+                userSkillExists = cvSkills.some(skill => {
+                  const skillLower = skill.toLowerCase().trim();
+                  const matchLower = match.userSkill.toLowerCase().trim();
+                  return skillLower === matchLower || 
+                         skillLower.includes(matchLower) || 
+                         matchLower.includes(skillLower);
+                });
+                
+                jobSkillExists = uniqueJobSkills.some(skill => {
+                  const skillLower = skill.toLowerCase().trim();
+                  const matchLower = match.jobSkill.toLowerCase().trim();
+                  return skillLower === matchLower || 
+                         skillLower.includes(matchLower) || 
+                         matchLower.includes(skillLower);
+                });
+                
+                // Additional compound skill checking for job skills
+                if (!jobSkillExists) {
+                  const jobSkillWords = match.jobSkill.toLowerCase().trim().split(/\s+/);
+                  if (jobSkillWords.length > 1) {
+                    // Check if job skill is compound (e.g., "jetpack compose")
+                    const allWordsFound = jobSkillWords.every(word => 
+                      uniqueJobSkills.some(skill => 
+                        skill.toLowerCase().includes(word)
+                      )
+                    );
+                    if (allWordsFound) {
+                      jobSkillExists = true;
+                    }
+                  }
+                }
+                
+                // Additional compound skill checking for user skills  
+                if (!userSkillExists) {
+                  const userSkillWords = match.userSkill.toLowerCase().trim().split(/\s+/);
+                  if (userSkillWords.length > 1) {
+                    // Check if multiple CV skills combine to form the match
+                    const allWordsFound = userSkillWords.every(word => 
+                      cvSkills.some(skill => 
+                        skill.toLowerCase().includes(word)
+                      )
+                    );
+                    if (allWordsFound) {
+                      userSkillExists = true;
+                    }
+                  }
                 }
                 
                 if (userSkillExists && jobSkillExists) {
@@ -1498,6 +1798,9 @@ Be extremely conservative - no false positives.`;
           confidence: confidenceWeight / matchedCount
         });
         
+        // Release AI session to improve performance for next scoring
+        AI.releasePromptSession();
+        
         return okRes(req, result);
         
       } catch (error: any) {
@@ -1505,6 +1808,10 @@ Be extremely conservative - no false positives.`;
           error: error?.message,
           stack: error?.stack
         });
+        
+        // Release AI session even on error to prevent performance degradation
+        AI.releasePromptSession();
+        
         throw error;
       }
     });

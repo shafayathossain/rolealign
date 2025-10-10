@@ -1004,7 +1004,7 @@ function AppContent() {
       setBusy("🔍 Analyzing job page...");
       setError("");
 
-      const result = await send("popup", "ANALYZE_JOB", { tabId: activeTab.id }, { timeoutMs: 15000 });
+      const result = await send("popup", "ANALYZE_JOB", { tabId: activeTab.id }, { timeoutMs: 120000 });
 
       setJob(result.job);
       log.info("Job analyzed successfully", result);
@@ -1032,7 +1032,7 @@ function AppContent() {
         cv: cvParsed,
         job: job,
         method: useAI ? "blend" : "deterministic"
-      }, { timeoutMs: 15000 });
+      }, { timeoutMs: 60000 });
 
       setScore(result);
       log.info("Match scored successfully", result);
@@ -1059,7 +1059,7 @@ function AppContent() {
       const result = await send("popup", "GENERATE_TAILORED_CV", {
         cv: cvParsed,
         job: job
-      }, { timeoutMs: 12000 });
+      }, { timeoutMs: 60000 });
 
       setTailored(typeof result === 'string' ? result : result.text || JSON.stringify(result));
       log.info("CV tailored successfully");

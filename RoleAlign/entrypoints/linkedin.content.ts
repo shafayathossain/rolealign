@@ -575,9 +575,27 @@ async function analyzeJobPage(ctx: any, url: string) {
 
     // Capture current page HTML
     const pageHtml = document.documentElement.outerHTML;
-    log.debug("Captured page HTML", { 
+    
+    // Calculate dynamic timeout based on content size
+    const WINDOW_SIZE = 10000; // Must match background script window size
+    const OVERLAP = 400; // Must match background script overlap
+    const MAX_WINDOWS = 12; // Must match background script max windows
+    const TIMEOUT_PER_WINDOW = 60000; // 60 seconds per window
+    const SAFETY_BUFFER = 30000; // 30 second safety buffer
+    
+    // Estimate window count (same logic as background script)
+    let estimatedWindowCount = Math.ceil(pageHtml.length / (WINDOW_SIZE - OVERLAP));
+    estimatedWindowCount = Math.min(estimatedWindowCount, MAX_WINDOWS);
+    
+    const dynamicTimeout = (estimatedWindowCount * TIMEOUT_PER_WINDOW) + SAFETY_BUFFER;
+    
+    log.info("Dynamic timeout calculation", { 
       htmlLength: pageHtml.length,
-      hasContent: pageHtml.length > 1000 
+      hasContent: pageHtml.length > 1000,
+      estimatedWindowCount,
+      timeoutPerWindow: TIMEOUT_PER_WINDOW,
+      dynamicTimeout: dynamicTimeout,
+      dynamicTimeoutMinutes: Math.round(dynamicTimeout / 60000 * 10) / 10
     });
     
     // Send job analysis request to background with HTML
@@ -586,7 +604,7 @@ async function analyzeJobPage(ctx: any, url: string) {
       url: url,
       html: pageHtml
     }, { 
-      timeoutMs: 30_000,
+      timeoutMs: dynamicTimeout,
       abortSignal: currentAnalysis.abortController?.signal
     });
 
@@ -643,7 +661,7 @@ async function analyzeJobPage(ctx: any, url: string) {
       useAI: true,
       semanticMatching: true
     }, { 
-      timeoutMs: 45_000, // Longer timeout for chunked processing
+      timeoutMs: 120_000, // Longer timeout for chunked processing
       abortSignal: currentAnalysis.abortController?.signal
     });
 
