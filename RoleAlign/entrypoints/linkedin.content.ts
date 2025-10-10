@@ -4,6 +4,13 @@ import { Logger } from "../src/util/logger";
 
 const log = new Logger({ namespace: "cs:linkedin", level: "debug", persist: true });
 
+// Track current analysis to allow cancellation
+let currentAnalysis: {
+  url: string;
+  cancelled: boolean;
+  abortController?: AbortController;
+} | null = null;
+
 // Helper function to check if URL is a LinkedIn job page
 function isJobPage(url: string | any): boolean {
   if (typeof url !== 'string') {
@@ -12,6 +19,21 @@ function isJobPage(url: string | any): boolean {
   }
   return url.includes('/jobs/') && 
          (url.includes('linkedin.com/jobs/') || url.includes('linkedin.com/') && url.includes('/jobs/'));
+}
+
+// Cancel any ongoing analysis
+function cancelCurrentAnalysis() {
+  if (currentAnalysis && !currentAnalysis.cancelled) {
+    log.info("Cancelling ongoing analysis", { url: currentAnalysis.url });
+    currentAnalysis.cancelled = true;
+    if (currentAnalysis.abortController) {
+      currentAnalysis.abortController.abort();
+    }
+    
+    // Remove any processing indicators
+    const indicator = document.querySelector("#rolealign-indicator");
+    if (indicator) indicator.remove();
+  }
 }
 
 /** ctx-aware sleep (stops if content script invalidates) */
@@ -132,9 +154,31 @@ function createBadge(score: number, matchDetails?: any): HTMLElement {
   `;
   
   badge.innerHTML = `
-    <div style="text-align: center;">
-      <div style="font-size: 18px; margin-bottom: 4px;">${score}%</div>
-      <div style="font-size: 11px; opacity: 0.9;">Match Score</div>
+    <div style="position: relative;">
+      <button id="badge-close" style="
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        background: rgba(255,255,255,0.9);
+        color: #666;
+        border: none;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        font-size: 12px;
+        font-weight: bold;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        transition: all 0.2s ease;
+      " onmouseover="this.style.background='rgba(255,255,255,1)'; this.style.color='#333';" 
+         onmouseout="this.style.background='rgba(255,255,255,0.9)'; this.style.color='#666';">×</button>
+      <div style="text-align: center; padding: 4px;">
+        <div style="font-size: 18px; margin-bottom: 4px;">${score}%</div>
+        <div style="font-size: 11px; opacity: 0.9;">Match Score</div>
+      </div>
     </div>
   `;
 
@@ -148,7 +192,19 @@ function createBadge(score: number, matchDetails?: any): HTMLElement {
     badge.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
   });
 
-  badge.addEventListener("click", () => {
+  // Add close button functionality
+  const closeBtn = badge.querySelector('#badge-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation(); // Prevent badge click
+      log.info("Badge close button clicked");
+      badge.remove();
+    });
+  }
+
+  badge.addEventListener("click", (e) => {
+    // Don't trigger if close button was clicked
+    if ((e.target as Element)?.id === 'badge-close') return;
     log.info("Badge clicked - showing detailed match breakdown");
     showMatchDetails(matchDetails);
   });
@@ -189,7 +245,7 @@ function showMatchDetails(matchDetails: any) {
     background: white;
     border-radius: 16px;
     padding: 24px;
-    max-width: 600px;
+    max-width: 700px;
     max-height: 80vh;
     overflow-y: auto;
     box-shadow: 0 20px 60px rgba(0,0,0,0.3);
@@ -199,6 +255,12 @@ function showMatchDetails(matchDetails: any) {
   const matchedSkills = matchDetails.matchedSkills || [];
   const missingSkills = matchDetails.missingSkills || [];
   const aiReasoning = matchDetails.aiReasoning || "";
+  const jobInfo = matchDetails.jobInfo || {};
+
+  // Extract job information from the current page or passed data
+  const jobTitle = jobInfo.title || document.querySelector('h1.top-card-layout__title, h1.job-details-jobs-unified-top-card__job-title, h1.jobs-unified-top-card__job-title, h1')?.textContent?.trim() || 'Job Title';
+  const companyName = jobInfo.company || document.querySelector('.topcard__org-name-link, .job-details-jobs-unified-top-card__company-name, .jobs-unified-top-card__company-name')?.textContent?.trim() || 'Company';
+  const jobUrl = jobInfo.url || location.href;
 
   modal.innerHTML = `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
@@ -241,6 +303,36 @@ function showMatchDetails(matchDetails: any) {
 
   popup.appendChild(modal);
   document.body.appendChild(popup);
+
+  // Add job information section after the header
+  const headerDiv = modal.querySelector('div[style*="margin-bottom: 20px"]');
+  if (headerDiv) {
+    const jobInfoHTML = `
+      <div style="background: #f8fafc; padding: 16px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
+        <h3 style="margin: 0 0 12px 0; color: #1e293b; font-size: 18px; display: flex; align-items: center;">
+          <span style="margin-right: 8px;">💼</span> Job Information
+        </h3>
+        <div>
+          <div style="margin-bottom: 8px;">
+            <strong style="color: #374151; font-size: 14px;">Position:</strong>
+            <span style="color: #1f2937; font-size: 14px; margin-left: 8px;">${jobTitle}</span>
+          </div>
+          <div style="margin-bottom: 8px;">
+            <strong style="color: #374151; font-size: 14px;">Company:</strong>
+            <span style="color: #1f2937; font-size: 14px; margin-left: 8px;">${companyName}</span>
+          </div>
+          <div style="margin-bottom: 8px;">
+            <strong style="color: #374151; font-size: 14px;">LinkedIn URL:</strong>
+            <a href="${jobUrl}" target="_blank" style="color: #0073b1; font-size: 13px; margin-left: 8px; text-decoration: none; word-break: break-all;" 
+               onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+              ${jobUrl}
+            </a>
+          </div>
+        </div>
+      </div>
+    `;
+    headerDiv.insertAdjacentHTML('afterend', jobInfoHTML);
+  }
 
   // Close popup handlers
   popup.addEventListener('click', (e) => {
@@ -290,6 +382,17 @@ function chunkText(text: string, maxChunkSize: number = 2000): string[] {
 
 /** Analyze job page and show score */
 async function analyzeJobPage(ctx: any, url: string) {
+  // Cancel any previous analysis
+  cancelCurrentAnalysis();
+  
+  // Set up new analysis tracking
+  const abortController = new AbortController();
+  currentAnalysis = {
+    url,
+    cancelled: false,
+    abortController
+  };
+  
   let processingIndicator: HTMLElement | null = null;
   
   try {
@@ -299,6 +402,12 @@ async function analyzeJobPage(ctx: any, url: string) {
       timestamp: new Date().toISOString() 
     });
     
+    // Check if cancelled early
+    if (currentAnalysis.cancelled) {
+      log.info("Analysis cancelled before starting");
+      return;
+    }
+    
     // Show processing indicator immediately
     processingIndicator = createProcessingIndicator();
     log.debug("✅ Processing indicator created and displayed");
@@ -306,12 +415,24 @@ async function analyzeJobPage(ctx: any, url: string) {
     // Wait for job description container to load with actual content
     log.debug("Waiting for job description to load...");
     
+    // Check if cancelled
+    if (currentAnalysis?.cancelled) {
+      log.info("Analysis cancelled during DOM waiting");
+      return;
+    }
+    
     // First wait for the job view container to exist
     const jobView = await waitForEl(ctx,
       ".jobs-search__job-details, .job-view-layout, .jobs-home__content, .jobs-search-results-list",
       10_000,
       250
     );
+    
+    // Check if cancelled after waiting
+    if (currentAnalysis?.cancelled) {
+      log.info("Analysis cancelled after waiting for job view");
+      return;
+    }
     
     if (jobView) {
       log.debug("Job view container found, waiting for description content...");
@@ -324,6 +445,12 @@ async function analyzeJobPage(ctx: any, url: string) {
       100      // Wait for at least 100 characters of content
     );
     
+    // Check if cancelled after waiting for description
+    if (currentAnalysis?.cancelled) {
+      log.info("Analysis cancelled after waiting for description");
+      return;
+    }
+    
     if (!descContainer) {
       log.warn("Job description container not found after waiting");
     } else {
@@ -335,6 +462,12 @@ async function analyzeJobPage(ctx: any, url: string) {
       // Additional wait to ensure all content is fully rendered
       await sleep(ctx, 2000);
       
+      // Check if cancelled after sleep
+      if (currentAnalysis?.cancelled) {
+        log.info("Analysis cancelled during content wait");
+        return;
+      }
+      
       // Also wait for job title to be present
       const titleEl = await waitForEl(ctx, 
         "h1.top-card-layout__title, h1.job-details-jobs-unified-top-card__job-title, h1.jobs-unified-top-card__job-title, h1",
@@ -342,6 +475,12 @@ async function analyzeJobPage(ctx: any, url: string) {
         150,
         5  // At least 5 characters for title
       );
+      
+      // Check if cancelled after waiting for title
+      if (currentAnalysis?.cancelled) {
+        log.info("Analysis cancelled after waiting for title");
+        return;
+      }
       
       if (titleEl) {
         log.debug("Job title found", { 
@@ -351,6 +490,12 @@ async function analyzeJobPage(ctx: any, url: string) {
     }
 
     log.info("Analyzing LinkedIn job page", { url });
+
+    // Check if cancelled before starting analysis
+    if (currentAnalysis?.cancelled) {
+      log.info("Analysis cancelled before starting job analysis");
+      return;
+    }
 
     // Capture current page HTML
     const pageHtml = document.documentElement.outerHTML;
@@ -365,8 +510,15 @@ async function analyzeJobPage(ctx: any, url: string) {
       url: url,
       html: pageHtml
     }, { 
-      timeoutMs: 30_000 
+      timeoutMs: 30_000,
+      abortSignal: currentAnalysis.abortController?.signal
     });
+
+    // Check if cancelled after job analysis
+    if (currentAnalysis?.cancelled) {
+      log.info("Analysis cancelled after job analysis");
+      return;
+    }
 
     log.info("Job analysis completed", { 
       title: result.job?.title, 
@@ -375,7 +527,16 @@ async function analyzeJobPage(ctx: any, url: string) {
     });
 
     // Get stored CV for scoring
-    const cvResult = await send("content", "GET_CV", {}, { timeoutMs: 5_000 });
+    const cvResult = await send("content", "GET_CV", {}, { 
+      timeoutMs: 5_000,
+      abortSignal: currentAnalysis.abortController?.signal
+    });
+    
+    // Check if cancelled after CV retrieval
+    if (currentAnalysis?.cancelled) {
+      log.info("Analysis cancelled after CV retrieval");
+      return;
+    }
     
     if (!cvResult.cv) {
       log.warn("No CV found - user needs to upload CV first");
@@ -392,6 +553,12 @@ async function analyzeJobPage(ctx: any, url: string) {
       needsChunking: chunks.length > 1
     });
 
+    // Check if cancelled before scoring
+    if (currentAnalysis?.cancelled) {
+      log.info("Analysis cancelled before scoring");
+      return;
+    }
+
     // Enhanced scoring with AI semantic matching
     const scoreResult = await send("content", "SCORE_MATCH_ENHANCED", {
       cv: cvResult.cv,
@@ -400,8 +567,15 @@ async function analyzeJobPage(ctx: any, url: string) {
       useAI: true,
       semanticMatching: true
     }, { 
-      timeoutMs: 45_000 // Longer timeout for chunked processing
+      timeoutMs: 45_000, // Longer timeout for chunked processing
+      abortSignal: currentAnalysis.abortController?.signal
     });
+
+    // Check if cancelled after scoring
+    if (currentAnalysis?.cancelled) {
+      log.info("Analysis cancelled after scoring");
+      return;
+    }
 
     log.info("Enhanced match score computed", { 
       score: scoreResult.score,
@@ -415,10 +589,40 @@ async function analyzeJobPage(ctx: any, url: string) {
       processingIndicator = null;
     }
 
-    // Display badge with score and match details
-    createBadge(scoreResult.score, scoreResult.matchDetails);
+    // Final check before showing results
+    if (currentAnalysis?.cancelled) {
+      log.info("Analysis cancelled before showing results");
+      return;
+    }
+
+    // Enhance match details with job information
+    const enhancedMatchDetails = {
+      ...scoreResult.matchDetails,
+      jobInfo: {
+        title: result.job?.title,
+        company: result.job?.company,
+        url: url
+      }
+    };
+
+    // Display badge with score and enhanced match details
+    createBadge(scoreResult.score, enhancedMatchDetails);
+    
+    // Mark analysis as completed
+    if (currentAnalysis && currentAnalysis.url === url) {
+      currentAnalysis = null;
+    }
 
   } catch (e: any) {
+    // Check if this was a cancelled operation
+    if (currentAnalysis?.cancelled || e?.name === 'AbortError') {
+      log.info("Analysis was cancelled", { url });
+      if (processingIndicator) {
+        processingIndicator.remove();
+      }
+      return;
+    }
+    
     log.error("Job analysis failed", { 
       error: e?.message ?? String(e),
       errorType: e?.name,
@@ -431,35 +635,43 @@ async function analyzeJobPage(ctx: any, url: string) {
       processingIndicator.remove();
     }
     
-    // Show error badge
-    const errorBadge = document.createElement("div");
-    errorBadge.id = "rolealign-badge";
-    errorBadge.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: #ef4444;
-      color: white;
-      padding: 12px 16px;
-      border-radius: 8px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 14px;
-      font-weight: 600;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      z-index: 10000;
-    `;
-    errorBadge.innerHTML = `
-      <div style="text-align: center;">
-        <div style="font-size: 16px; margin-bottom: 4px;">❌</div>
-        <div style="font-size: 11px;">Analysis Failed</div>
-      </div>
-    `;
-    document.body.appendChild(errorBadge);
-    
-    // Auto-remove error badge after 5 seconds
-    setTimeout(() => {
-      errorBadge.remove();
-    }, 5000);
+    // Don't show error badge if analysis was cancelled
+    if (!currentAnalysis?.cancelled) {
+      // Show error badge
+      const errorBadge = document.createElement("div");
+      errorBadge.id = "rolealign-badge";
+      errorBadge.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #ef4444;
+        color: white;
+        padding: 12px 16px;
+        border-radius: 8px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 14px;
+        font-weight: 600;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+      `;
+      errorBadge.innerHTML = `
+        <div style="text-align: center;">
+          <div style="font-size: 16px; margin-bottom: 4px;">❌</div>
+          <div style="font-size: 11px;">Analysis Failed</div>
+        </div>
+      `;
+      document.body.appendChild(errorBadge);
+      
+      // Auto-remove error badge after 5 seconds
+      setTimeout(() => {
+        errorBadge.remove();
+      }, 5000);
+    }
+  } finally {
+    // Clean up analysis tracking
+    if (currentAnalysis && currentAnalysis.url === url) {
+      currentAnalysis = null;
+    }
   }
 }
 
@@ -477,41 +689,127 @@ export default defineContentScript({
       contextValid: ctx.isValid 
     });
 
-    const url = location.href;
+    let lastUrl = location.href;
 
-    // Initial mount (full reload / first load)
-    if (isJobPage(url)) {
-      log.info("LinkedIn job URL detected (initial)", { url });
-      analyzeJobPage(ctx, url);
-    } else {
-      log.debug("Non-job LinkedIn page", { url });
-    }
-
-    // Handle SPA navigation (history API route changes)
-    ctx.addEventListener(window as any, "wxt:locationchange", ({ newUrl }: any) => {
-      log.debug("Navigation event received", { 
+    // Function to handle URL changes
+    function handleUrlChange(newUrl: string, source: string) {
+      if (newUrl === lastUrl) return;
+      
+      log.debug(`URL change detected (${source})`, { 
+        oldUrl: lastUrl,
         newUrl, 
-        type: typeof newUrl, 
         currentUrl: location.href 
       });
       
+      lastUrl = newUrl;
+      
       if (isJobPage(newUrl)) {
-        log.info("LinkedIn job URL detected (SPA nav)", { newUrl });
-        // Remove any existing badge/indicator when navigating to new job
+        log.info(`LinkedIn job URL detected (${source})`, { newUrl });
+        // Cancel any ongoing analysis and remove UI elements
+        cancelCurrentAnalysis();
         const existingBadge = document.querySelector("#rolealign-badge");
         if (existingBadge) existingBadge.remove();
         const existingIndicator = document.querySelector("#rolealign-indicator");
         if (existingIndicator) existingIndicator.remove();
-        // Analyze new job page
-        analyzeJobPage(ctx, newUrl);
+        
+        // Start new analysis after a short delay to ensure DOM is updated
+        setTimeout(() => {
+          if (ctx.isValid && location.href === newUrl) {
+            analyzeJobPage(ctx, newUrl);
+          }
+        }, 500);
       } else {
-        log.debug("Navigated to non-job page", { newUrl });
-        // Remove badge/indicator when leaving job pages
+        log.debug(`Navigated to non-job page (${source})`, { newUrl });
+        // Cancel analysis and remove UI when leaving job pages
+        cancelCurrentAnalysis();
         const existingBadge = document.querySelector("#rolealign-badge");
         if (existingBadge) existingBadge.remove();
         const existingIndicator = document.querySelector("#rolealign-indicator");
         if (existingIndicator) existingIndicator.remove();
       }
+    }
+
+    // Initial mount (full reload / first load)
+    if (isJobPage(lastUrl)) {
+      log.info("LinkedIn job URL detected (initial)", { url: lastUrl });
+      analyzeJobPage(ctx, lastUrl);
+    } else {
+      log.debug("Non-job LinkedIn page", { url: lastUrl });
+    }
+
+    // Handle SPA navigation (history API route changes)
+    ctx.addEventListener(window as any, "wxt:locationchange", ({ newUrl }: any) => {
+      handleUrlChange(newUrl, "wxt:locationchange");
+    });
+
+    // Additional URL change detection methods for more robust coverage
+    
+    // Listen for popstate events (back/forward navigation)
+    ctx.addEventListener(window, "popstate", () => {
+      handleUrlChange(location.href, "popstate");
+    });
+
+    // Listen for pushstate/replacestate events (programmatic navigation)
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+    
+    history.pushState = function(...args) {
+      originalPushState.apply(history, args);
+      setTimeout(() => handleUrlChange(location.href, "pushState"), 0);
+    };
+    
+    history.replaceState = function(...args) {
+      originalReplaceState.apply(history, args);
+      setTimeout(() => handleUrlChange(location.href, "replaceState"), 0);
+    };
+
+    // Fallback: Poll for URL changes every 2 seconds
+    const urlPollInterval = setInterval(() => {
+      if (!ctx.isValid) {
+        clearInterval(urlPollInterval);
+        return;
+      }
+      handleUrlChange(location.href, "polling");
+    }, 2000);
+
+    // Listen for DOM mutations that might indicate content changes
+    const observer = new MutationObserver((mutations) => {
+      // Check if job content area has changed
+      const hasJobContentChange = mutations.some(mutation => {
+        if (mutation.type === 'childList') {
+          return Array.from(mutation.addedNodes).some(node => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const el = node as Element;
+              return el.matches?.('.jobs-description, .jobs-box__html-content, .job-details') ||
+                     el.querySelector?.('.jobs-description, .jobs-box__html-content, .job-details');
+            }
+            return false;
+          });
+        }
+        return false;
+      });
+
+      if (hasJobContentChange && isJobPage(location.href)) {
+        log.debug("Job content change detected, refreshing analysis");
+        handleUrlChange(location.href, "DOM mutation");
+      }
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+
+    // Cleanup on context invalidation
+    ctx.onInvalidated(() => {
+      log.info("Context invalidated, cleaning up");
+      cancelCurrentAnalysis();
+      clearInterval(urlPollInterval);
+      observer.disconnect();
+      
+      // Restore original history methods
+      history.pushState = originalPushState;
+      history.replaceState = originalReplaceState;
     });
   },
 });

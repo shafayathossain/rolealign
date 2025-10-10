@@ -1039,11 +1039,11 @@ Return ONLY a valid JSON object (no markdown, no code fences) with job title and
               log.debug("Using Chrome Summarization + Prompt APIs for skill extraction");
             
             // First, use Summarization API to extract key technical points
-            const technicalSummary = await AI.Summarize.text(chunk, {
+            let technicalSummary = await AI.Summarize.text(chunk, {
               type: "key-points",
               format: "markdown", 
               length: "long",
-              context: "Extract ALL technical terms, technologies, frameworks, and skills mentioned in this job posting. Be extremely literal - only include what is explicitly written in the text. Do NOT infer, assume, or add related technologies. Copy exact technical terms as they appear: programming languages, framework names, platform names, specific libraries, development tools, technical concepts. Preserve compound technical terms exactly (e.g., 'Core Graphics', 'Multi-threaded programming'). Focus on concrete technical requirements only - exclude soft skills, company information, and general business terms.",
+              context: "You are extracting technical requirements from a job posting. Focus ONLY on technical skills, technologies, frameworks, programming languages, platforms, and development tools that are explicitly mentioned. IGNORE company information, job responsibilities, soft skills, and general business content. Extract technical terms exactly as written: React Native, Flutter, Android, iOS, Java, Swift, Kotlin, API, CI/CD, etc. Prioritize concrete technical requirements over general descriptions.",
               timeoutMs: 20000
             });
             
@@ -1052,27 +1052,74 @@ Return ONLY a valid JSON object (no markdown, no code fences) with job title and
               length: technicalSummary.length
             });
             
+            // Check if summarization failed
+            const summarizationFailures = [
+              'AI is currently unable to analyze',
+              'unable to process',
+              'cannot analyze',
+              'error occurred',
+              'failed to analyze'
+            ];
+            
+            const isSummarizationError = summarizationFailures.some(phrase => 
+              technicalSummary.toLowerCase().includes(phrase.toLowerCase())
+            );
+            
+            if (isSummarizationError || technicalSummary.trim().length < 50) {
+              log.warn("Summarization API failed, using original chunk directly", {
+                summary: technicalSummary,
+                chunkLength: cleanedJobText.length
+              });
+              // Use the original job text instead of the failed summary
+              technicalSummary = cleanedJobText;
+            }
+            
             // Then use Prompt API to extract specific skills from the summary
-            const skillsPrompt = `You are a literal text extraction tool. Extract ONLY the specific technical terms that are explicitly written in this job posting summary. Do NOT add, infer, or assume any technologies.
+            const skillsPrompt = `You are a technical skill extractor. Extract EXACTLY what is written in the job summary. Follow these systematic steps:
 
 Job Summary:
 ${technicalSummary}
 
-STRICT EXTRACTION RULES:
+SYSTEMATIC EXTRACTION PROCESS:
 
-1. COPY EXACTLY: Only extract technical terms that appear word-for-word in the text
-2. NO INFERENCE: Do not add related technologies (e.g., if text says "iOS", don't add "Xcode")
-3. NO EXPANSION: Do not expand abbreviations or assume full names
-4. PRESERVE COMPOUND TERMS: Keep multi-word technical terms intact exactly as written
-5. TECHNICAL ONLY: Extract only programming languages, frameworks, libraries, platforms, technical concepts
+STEP 1: Scan for FRAMEWORK/LIBRARY NAMES:
+- Look for proper nouns that are technical frameworks or libraries
+- Examples of patterns: CamelCase names, compound technical terms
+- Extract exactly as written, preserving spacing and capitalization
+- Include any framework mentioned after words like "experience with", "proficiency in", "knowledge of"
 
-WHAT TO EXTRACT (only if explicitly mentioned):
-✅ Programming language names (Java, Swift, Kotlin, etc.)
-✅ Framework names exactly as written (SwiftUI, UIKit, Core Graphics, etc.)
-✅ Platform names (iOS, Android, etc.) 
-✅ Technical concepts exactly as written (Multi-threaded programming, Memory management, etc.)
-✅ Development tools exactly as mentioned
-✅ Technical acronyms (API, SDK, JNI, etc.)
+STEP 2: Scan for PROGRAMMING LANGUAGES:
+- Look for language names (typically capitalized proper nouns in technical context)
+- Extract exactly as written
+
+STEP 3: Scan for PLATFORMS/OPERATING SYSTEMS:
+- Look for platform names mentioned in technical context
+- Extract exactly as written
+
+STEP 4: Scan for DEVELOPMENT TOOLS/PROCESSES:
+- Look for technical tools, methodologies, or processes
+- Include compound terms with slashes, hyphens, or spaces
+- Extract exactly as written
+
+STEP 5: Scan for API/SERVICE TERMS:
+- Look for API-related terms, service architectures
+- Include compound terms like "REST API", "API services"
+- Extract exactly as written
+
+STEP 6: Scan for DATABASE/DATA TECHNOLOGIES:
+- Look for database names, data processing technologies
+- Include compound terms like "Big Data"
+- Extract exactly as written
+
+CONSISTENT EXTRACTION RULES:
+- Extract ONLY explicit technical terms that appear in the text
+- Preserve exact capitalization, spacing, and punctuation
+- Include compound terms as complete units
+- NO inference beyond what's literally written
+- NO soft skills, company names, job responsibilities
+- NO generic categories - extract specific terms only
+
+OUTPUT FORMAT: Comma-separated list of exact technical terms as they appear in the text
 
 WHAT TO EXCLUDE:
 ❌ Soft skills (communication, problem-solving, collaboration)
@@ -1191,7 +1238,7 @@ Technical Skills:`;
           try {
             log.debug("Using AI for skill matching analysis");
             
-            const skillMatchingPrompt = `You are a strict skill matching tool. Compare candidate skills with job requirements using literal string matching. Do NOT make assumptions or create matches that don't exist.
+            const skillMatchingPrompt = `You are a skill matching algorithm. Apply these pattern-based rules consistently to find matches between any skills.
 
 CANDIDATE SKILLS:
 ${cvSkills.join(', ')}
@@ -1199,34 +1246,41 @@ ${cvSkills.join(', ')}
 JOB REQUIRED SKILLS:  
 ${uniqueJobSkills.join(', ')}
 
-MATCHING RULES:
+PATTERN-BASED MATCHING RULES (apply in order):
 
-1. EXACT TECHNICAL MATCHES ONLY:
-   • Technical skills must match exactly as strings (case-insensitive)
-   • Java matches Java ✓
-   • Swift matches Swift ✓  
-   • SwiftUI matches SwiftUI ✓
-   • Core Graphics matches Core Graphics ✓
-   • BUT: Swift does NOT match SwiftUI ❌
-   • BUT: iOS does NOT match Core Graphics ❌
+RULE 1 - EXACT STRING MATCHES (case-insensitive):
+- If candidate skill and job skill are identical when lowercased → EXACT MATCH (confidence: 1.0)
+- Examples: "iOS" ↔ "ios", "JavaScript" ↔ "javascript"
 
-2. LIMITED SEMANTIC MATCHING (Methodologies/Practices Only):
-   • Only for non-technical development practices
-   • Agile ↔ Scrum (both are project methodologies)
-   • CI/CD ↔ DevOps (both are deployment practices)
-   • Code Review ↔ Quality Assurance (both are quality practices)
-   • NOT for technical skills: Android ≠ Java, iOS ≠ Swift
+RULE 2 - PLATFORM DEVELOPMENT PATTERN:
+- If candidate has "[Platform] Development" and job needs "[Platform]" → SEMANTIC MATCH (confidence: 0.9)
+- Pattern: "X Development" matches "X" where X is a platform/technology name
+- Examples: "Android Development" ↔ "Android", "Web Development" ↔ "Web"
 
-3. STRICT VALIDATION:
-   • If candidate has "API Integration" and job needs "REST API" → NO match
-   • If candidate has "Android Development" and job needs "Android" → possible match
-   • If candidate has "iOS" and job needs "iOS" → exact match
-   • If candidate has "Swift" and job needs "Swift" → exact match
+RULE 3 - API SKILLS PATTERN:
+- If candidate has API-related skill and job needs API-related skill → SEMANTIC MATCH (confidence: 0.8)
+- Patterns: "API Integration" ↔ "REST API", "API Integration" ↔ "API services"
+- Any skill containing "API" can match other "API" skills if contextually related
 
-RETURN ONLY VALID MATCHES:
-• Must exist exactly in candidate skills list
-• Must exist exactly in job requirements list  
-• Must be logically equivalent (exact technical terms or equivalent methodologies)
+RULE 4 - FRAMEWORK SPECIALIZATION PATTERN:
+- If candidate has specific framework and job needs generic framework category → SEMANTIC MATCH (confidence: 0.7)
+- Pattern: Specific framework matches "Mobile Frameworks", "Web Frameworks", etc.
+- Examples: Any mobile framework matches "Mobile Frameworks"
+
+RULE 5 - TESTING/QA PATTERN:
+- If candidate has testing-related skill and job needs testing-related skill → SEMANTIC MATCH (confidence: 0.8)
+- Patterns: Skills containing "test", "testing", "quality", "QA" match each other
+
+RULE 6 - TOOL/METHODOLOGY PATTERN:
+- If skills are related development tools or methodologies → SEMANTIC MATCH (confidence: 0.7)
+- Examples: "DevOps" ↔ "CI/CD", deployment-related skills
+
+ALGORITHM INSTRUCTIONS:
+1. For each job skill, check against ALL candidate skills
+2. Apply rules 1-6 in order, take first match found
+3. Use exact confidence values specified
+4. Be consistent - same input should always produce same output
+5. Only match if there's genuine technical relationship
 
 OUTPUT FORMAT:
 [{
@@ -1267,15 +1321,36 @@ Be extremely conservative - no false positives.`;
             // Validate and process AI matches
             if (Array.isArray(aiMatches)) {
               for (const match of aiMatches) {
-                // Validate that userSkill exists in candidate's skills
-                const userSkillExists = cvSkills.some(skill => 
-                  skill.toLowerCase().trim() === match.userSkill.toLowerCase().trim()
-                );
+                // More flexible validation for semantic matches
+                let userSkillExists = false;
+                let jobSkillExists = false;
                 
-                // Validate that jobSkill exists in job requirements
-                const jobSkillExists = uniqueJobSkills.some(skill => 
-                  skill.toLowerCase().trim() === match.jobSkill.toLowerCase().trim()
-                );
+                if (match.matchType === 'exact') {
+                  // For exact matches, require exact string match
+                  userSkillExists = cvSkills.some(skill => 
+                    skill.toLowerCase().trim() === match.userSkill.toLowerCase().trim()
+                  );
+                  jobSkillExists = uniqueJobSkills.some(skill => 
+                    skill.toLowerCase().trim() === match.jobSkill.toLowerCase().trim()
+                  );
+                } else {
+                  // For semantic matches, be more flexible
+                  userSkillExists = cvSkills.some(skill => {
+                    const skillLower = skill.toLowerCase().trim();
+                    const matchLower = match.userSkill.toLowerCase().trim();
+                    return skillLower === matchLower || 
+                           skillLower.includes(matchLower) || 
+                           matchLower.includes(skillLower);
+                  });
+                  
+                  jobSkillExists = uniqueJobSkills.some(skill => {
+                    const skillLower = skill.toLowerCase().trim();
+                    const matchLower = match.jobSkill.toLowerCase().trim();
+                    return skillLower === matchLower || 
+                           skillLower.includes(matchLower) || 
+                           matchLower.includes(skillLower);
+                  });
+                }
                 
                 if (userSkillExists && jobSkillExists) {
                   matchedSkills.push({
@@ -1295,7 +1370,11 @@ Be extremely conservative - no false positives.`;
                   log.warn("AI returned invalid skill match", {
                     match,
                     userSkillExists,
-                    jobSkillExists
+                    jobSkillExists,
+                    userSkillsPreview: cvSkills.slice(0, 10),
+                    jobSkillsPreview: uniqueJobSkills,
+                    matchedUserSkill: match.userSkill,
+                    matchedJobSkill: match.jobSkill
                   });
                 }
               }
