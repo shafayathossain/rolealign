@@ -150,11 +150,12 @@ RoleAlign is a Chrome extension that provides **one-time CV upload → continuou
 - **AI Availability**: Always check `AI.Availability.prompt()` before using Chrome AI APIs
 - **Messaging**: Use the typed message bus from `src/messaging/bus.ts` for all cross-context communication
 - **Content Scripts**: Must handle context invalidation during navigation and cleanup properly
-- **Timeouts**: All AI operations should include timeout handling (use default 30s for AI, 15s for messaging)
+- **Timeouts**: All AI operations should include timeout handling (use default 30s for AI, 15s for messaging). For complex AI prompts like skill matching, use 120s timeout
 - **Fallbacks**: Ensure deterministic scoring works when AI is unavailable
 - **Message Contracts**: Use typed message contracts from `src/messaging/types.ts`
 - **Site Adapters**: Follow the `JobNormalized` interface when adding new job sites
 - **Storage**: Use the versioned key-value store from `src/storage/kv.ts`
+- **No Hardcoded Skills**: NEVER hardcode specific skill names in prompts or logic. Skills can be used as examples in prompts but not as fixed rules. The system should work for any technology stack (Android, iOS, Web, Backend, etc.) without modification
 
 ## User Experience Flow
 

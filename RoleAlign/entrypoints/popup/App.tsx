@@ -5,6 +5,7 @@ import { Logger } from "../../src/util/logger";
 
 // Components
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ChromeAIFlagsCheck } from "./components/ChromeAIFlagsCheck";
 import { CVManageView } from "./components/CVManageView";
 import { CVInputSection } from "./components/CVInputSection";
 import { JobAnalysis } from "./components/JobAnalysis";
@@ -44,6 +45,7 @@ function AppContent() {
   const [error, setError] = useState<string>("");
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState<string>("");
+  const [flagsValid, setFlagsValid] = useState<boolean>(false);
 
   const [useAI, setUseAI] = useState(true);
   const [activeUrl, setActiveUrl] = useState<string>("");
@@ -309,6 +311,15 @@ function AppContent() {
           <p>{initError}</p>
           <button onClick={() => window.location.reload()}>Reload</button>
         </div>
+      </div>
+    );
+  }
+
+  // Show flags check if Chrome AI is not properly enabled
+  if (!flagsValid) {
+    return (
+      <div className="popup-container flags-check-mode">
+        <ChromeAIFlagsCheck onFlagsValid={setFlagsValid} />
       </div>
     );
   }

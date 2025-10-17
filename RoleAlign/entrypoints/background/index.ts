@@ -360,6 +360,13 @@ export default defineBackground({
       });
       
       try {
+        // Check AI availability first
+        const promptAvailable = await AI.Availability.prompt();
+        log.debug("Prompt API availability for CV processing", { availability: promptAvailable });
+        
+        if (promptAvailable === "no" || promptAvailable === "api-missing") {
+          throw new Error(`Prompt API not available: ${promptAvailable}. Enable chrome://flags/#prompt-api-for-gemini-nano and restart Chrome.`);
+        }
         const processedSections: any = {};
         const extractedSkills: string[] = [];
         
@@ -1121,8 +1128,29 @@ Return ONLY a valid JSON object (no markdown, no code fences) with job title and
       
       const input = toScoreInput(cv, job);
       
-      const method: "deterministic" | "ai" | "blend" =
-      useAI === true ? "blend" : "deterministic";
+      let method: "deterministic" | "ai" | "blend" = "deterministic";
+      
+      // Check AI availability if AI scoring is requested
+      if (useAI === true) {
+        try {
+          const promptAvailable = await AI.Availability.prompt();
+          log.debug("Prompt API availability for scoring", { availability: promptAvailable });
+          
+          if (promptAvailable === "available" || promptAvailable === "downloadable") {
+            method = "blend";
+          } else {
+            log.warn("Prompt API not available for scoring, falling back to deterministic", { 
+              availability: promptAvailable 
+            });
+            method = "deterministic";
+          }
+        } catch (availError: any) {
+          log.warn("Failed to check AI availability for scoring, using deterministic", {
+            error: availError?.message
+          });
+          method = "deterministic";
+        }
+      }
       
       const result = await computeScore(input, {
         method,
@@ -1502,74 +1530,71 @@ Technical Skills:`;
           try {
             log.debug("Using AI for skill matching analysis");
             
-            const skillMatchingPrompt = `You are a skill matching algorithm. Apply these pattern-based rules consistently to find matches between any skills.
+            // Convert skills to lowercase for AI matching to eliminate case sensitivity issues
+            const cvSkillsLower = cvSkills.map(skill => skill.toLowerCase());
+            const jobSkillsLower = uniqueJobSkills.map(skill => skill.toLowerCase());
+            
+            const skillMatchingPrompt = `You are an expert technical recruiter matching candidate skills with job requirements. Your goal is to find ALL possible matches between the two lists below.
 
-CANDIDATE SKILLS:
-${cvSkills.join(', ')}
+CANDIDATE SKILLS (lowercase):
+${cvSkillsLower.join(', ')}
 
-JOB REQUIRED SKILLS:  
-${uniqueJobSkills.join(', ')}
+JOB REQUIRED SKILLS (lowercase):
+${jobSkillsLower.join(', ')}
 
-PATTERN-BASED MATCHING RULES (apply in order):
+MATCHING PHILOSOPHY:
+Think like an experienced tech recruiter who understands that skills are interconnected. Many technologies come as a package - when someone knows one technology, they inherently know related technologies. Be generous in your matching while remaining technically accurate.
 
-RULE 1 - EXACT STRING MATCHES (case-insensitive):
-- If candidate skill and job skill are identical when lowercased → EXACT MATCH (confidence: 1.0)
-- Examples: "iOS" ↔ "ios", "JavaScript" ↔ "javascript"
+MATCHING TYPES TO APPLY:
 
-RULE 2 - DEVELOPMENT TYPE MATCHING:
-- "Android Development" ↔ "mobile development" → SEMANTIC MATCH (confidence: 0.9)
-- "Web Development" ↔ "frontend development" → SEMANTIC MATCH (confidence: 0.9)
-- "X Development" matches "Y development" if X and Y are related technologies
+1. EXACT MATCHES: 
+   Skills that are identical or differ only in formatting/capitalization.
+   Confidence: 1.0
 
-RULE 3 - API VARIATIONS:
-- "RESTful APIs" ↔ "restful api" → SEMANTIC MATCH (confidence: 0.9)
-- "REST" ↔ "restful api" → SEMANTIC MATCH (confidence: 0.8)
-- "API Integration" ↔ "REST API" → SEMANTIC MATCH (confidence: 0.8)
-- Any API-related skills can match variations (REST, RESTful, API, etc.)
+2. SUBSET/SUPERSET MATCHES:
+   When a candidate skill contains or is contained within a job skill.
+   Examples: "software development" contains "development", "api integration" contains "api"
+   Confidence: 0.9
 
-RULE 4 - COMPOUND SKILL MATCHING:
-- If candidate has separate skills that combine to match job requirement → SEMANTIC MATCH (confidence: 0.8)
-- "Jetpack" + "Compose" ↔ "jetpack compose" → Use "Jetpack" as userSkill, "jetpack compose" as jobSkill
-- "CI/CD" ↔ "ci/cd" → EXACT MATCH (confidence: 1.0) - case insensitive
-- When multiple candidate skills combine, pick the most representative one as userSkill
+3. ECOSYSTEM MATCHES:
+   Skills that are part of the same technology ecosystem or toolchain.
+   - Development platforms always include their standard tools (IDEs, build systems, deployment platforms)
+   - Cloud platforms include their messaging services
+   - Databases with specific variants (SQL includes all SQL variants)
+   - Version control systems that serve similar purposes
+   Confidence: 0.85
 
-RULE 5 - PLATFORM DEVELOPMENT PATTERN:
-- "Android Development" ↔ "Android" → SEMANTIC MATCH (confidence: 0.9)
-- "X Development" matches "X" where X is a platform/technology name
+4. SEMANTIC EQUIVALENTS:
+   Different names for the same technology or concept.
+   - Abbreviations and their full forms
+   - Common alternative names for the same technology
+   - Related methodologies that overlap significantly
+   Confidence: 0.9
 
-RULE 6 - TESTING/QA PATTERN:
-- Skills containing "test", "testing", "quality", "QA", "debug" match each other → SEMANTIC MATCH (confidence: 0.8)
-- "Code Review" ↔ "testing" → SEMANTIC MATCH (confidence: 0.7)
-- "Mockito" ↔ "testing" → SEMANTIC MATCH (confidence: 0.8)
-- "Mock" ↔ "testing" → SEMANTIC MATCH (confidence: 0.8)
+5. IMPLICIT KNOWLEDGE:
+   Skills that are inherently known if you know another skill.
+   - Knowing a specific implementation implies knowing the general concept
+   - Knowing a framework implies knowing its configuration and build tools
+   - Knowing a platform implies knowing its deployment mechanisms
+   Confidence: 0.8
 
-RULE 7 - FRAMEWORK SPECIALIZATION:
-- Specific framework matches generic category → SEMANTIC MATCH (confidence: 0.7)
-- Any mobile framework matches "Mobile Frameworks", "UI Frameworks"
+REASONING APPROACH:
+- If someone has experience with a mobile platform, they know its entire toolchain
+- If someone knows a cloud service, they know its related services
+- If someone knows a database, they know its query language
+- If someone knows a framework, they know its ecosystem tools
+- Version control systems are often interchangeable in terms of concepts
+- API knowledge transfers across different API types
+- Testing frameworks knowledge transfers across similar frameworks
 
-ALGORITHM INSTRUCTIONS:
-1. For each job skill, check against ALL candidate skills
-2. Apply rules 1-7 in order, take first match found
-3. For RULE 4 (compound matching), check if multiple candidate skills combine to form the job skill
-4. Use exact confidence values specified
-5. Be consistent - same input should always produce same output
-6. Only match if there's genuine technical relationship
+OUTPUT REQUIREMENTS:
+Return ONLY a raw JSON array - no markdown, no code fences, no backticks, no explanations.
+Start your response with [ and end with ]
+Each match must use the EXACT strings from the lists above.
+Format: [{"userSkill":"exact string from candidate list","jobSkill":"exact string from job list","matchType":"exact/semantic","confidence":0.7-1.0}]
 
-OUTPUT FORMAT - RETURN ONLY VALID JSON ARRAY:
-[{
-  "userSkill": "MUST be an exact string from the CANDIDATE SKILLS list above - copy it character for character",
-  "jobSkill": "MUST be an exact string from the JOB REQUIRED SKILLS list above - copy it character for character", 
-  "matchType": "exact" or "semantic",
-  "confidence": 0.8-1.0
-}]
-
-CRITICAL REQUIREMENTS:
-1. userSkill MUST be an EXACT copy of a skill from the CANDIDATE SKILLS list - do not modify, rephrase, or synthesize
-2. jobSkill MUST be an EXACT copy of a skill from the JOB REQUIRED SKILLS list - do not modify, rephrase, or synthesize
-3. Return ONLY the JSON array. No explanations, no text, no markdown formatting
-4. If no matches exist, return an empty array []
-
-Be extremely conservative - no false positives. Only return exact string copies from the provided lists.`;
+CRITICAL: Do NOT wrap the JSON in markdown code fences or backticks. Return raw JSON only.
+Be thorough - find EVERY possible valid match. Think about what skills naturally come together in real-world development.`;
             
             const schema = {
               type: "array",
@@ -1590,80 +1615,40 @@ Be extremely conservative - no false positives. Only return exact string copies 
               jobSkill: string;
               matchType: string;
               confidence: number;
-            }>>(skillMatchingPrompt, { schema, timeoutMs: 60000 });
+            }>>(skillMatchingPrompt, { schema, timeoutMs: 120000 }); // Increased timeout to 2 minutes
             
             log.debug("AI skill matching response", {
               matches: aiMatches,
               matchCount: aiMatches?.length || 0
             });
             
-            // Validate and process AI matches
+            // Validate and process AI matches (AI returns lowercase, map back to original case)
             if (Array.isArray(aiMatches)) {
               for (const match of aiMatches) {
-                // More flexible validation for semantic matches
-                let userSkillExists = false;
-                let jobSkillExists = false;
+                // Find the original case versions of the skills
+                const originalUserSkill = cvSkills.find(skill => 
+                  skill.toLowerCase() === match.userSkill.toLowerCase()
+                );
                 
-                // Use flexible validation for both exact and semantic matches
-                userSkillExists = cvSkills.some(skill => {
-                  const skillLower = skill.toLowerCase().trim();
-                  const matchLower = match.userSkill.toLowerCase().trim();
-                  return skillLower === matchLower || 
-                         skillLower.includes(matchLower) || 
-                         matchLower.includes(skillLower);
-                });
+                const originalJobSkill = uniqueJobSkills.find(skill => 
+                  skill.toLowerCase() === match.jobSkill.toLowerCase()
+                );
                 
-                jobSkillExists = uniqueJobSkills.some(skill => {
-                  const skillLower = skill.toLowerCase().trim();
-                  const matchLower = match.jobSkill.toLowerCase().trim();
-                  return skillLower === matchLower || 
-                         skillLower.includes(matchLower) || 
-                         matchLower.includes(skillLower);
-                });
+                // Validate that both skills exist in lowercase lists
+                const userSkillExists = cvSkillsLower.includes(match.userSkill.toLowerCase());
+                const jobSkillExists = jobSkillsLower.includes(match.jobSkill.toLowerCase());
                 
-                // Additional compound skill checking for job skills
-                if (!jobSkillExists) {
-                  const jobSkillWords = match.jobSkill.toLowerCase().trim().split(/\s+/);
-                  if (jobSkillWords.length > 1) {
-                    // Check if job skill is compound (e.g., "jetpack compose")
-                    const allWordsFound = jobSkillWords.every(word => 
-                      uniqueJobSkills.some(skill => 
-                        skill.toLowerCase().includes(word)
-                      )
-                    );
-                    if (allWordsFound) {
-                      jobSkillExists = true;
-                    }
-                  }
-                }
-                
-                // Additional compound skill checking for user skills  
-                if (!userSkillExists) {
-                  const userSkillWords = match.userSkill.toLowerCase().trim().split(/\s+/);
-                  if (userSkillWords.length > 1) {
-                    // Check if multiple CV skills combine to form the match
-                    const allWordsFound = userSkillWords.every(word => 
-                      cvSkills.some(skill => 
-                        skill.toLowerCase().includes(word)
-                      )
-                    );
-                    if (allWordsFound) {
-                      userSkillExists = true;
-                    }
-                  }
-                }
-                
-                if (userSkillExists && jobSkillExists) {
+                if (userSkillExists && jobSkillExists && originalUserSkill && originalJobSkill) {
                   matchedSkills.push({
-                    userSkill: match.userSkill,
-                    jobSkill: match.jobSkill,
+                    userSkill: originalUserSkill,  // Use original case
+                    jobSkill: originalJobSkill,    // Use original case
                     confidence: Math.max(0, Math.min(1, match.confidence || 0.8)),
                     semantic: match.matchType === "semantic"
                   });
                   
                   log.debug("AI skill match validated", {
-                    userSkill: match.userSkill,
-                    jobSkill: match.jobSkill,
+                    userSkill: originalUserSkill,
+                    jobSkill: originalJobSkill,
                     type: match.matchType,
                     confidence: match.confidence
                   });
@@ -1819,20 +1804,33 @@ Be extremely conservative - no false positives. Only return exact string copies 
     addHandler("GENERATE_TAILORED_CV", async (req: GenerateTailoredCvReq) => {
       const { cv, job, targetFormat } = req.payload;
       
-      const prompt =
-      `You are a resume tailoring assistant.\n` +
-      `Rewrite and reorganize the user's CV to match the job while staying 100% truthful.\n` +
-      `Emphasize relevant skills/experience, de-emphasize irrelevant parts.\n` +
-      `Output format: ${targetFormat ?? "plain-text"}\n\n` +
-      `JOB (JSON):\n${JSON.stringify(job)}\n\n` +
-      `CV (JSON):\n${JSON.stringify(cv)}\n\n` +
-      `Return only the final CV text.`;
-      
-      const text = await AI.Prompt.text(prompt, { timeoutMs: 35_000 });
-      const downloadName = "RoleAlign-CV.txt";
-      
-      log.info("GENERATE_TAILORED_CV ok", { chars: text.length });
-      return okRes(req, { text, downloadName });
+      try {
+        // Check AI availability first
+        const promptAvailable = await AI.Availability.prompt();
+        log.debug("Prompt API availability for tailored CV generation", { availability: promptAvailable });
+        
+        if (promptAvailable === "no" || promptAvailable === "api-missing") {
+          throw new Error(`Prompt API not available: ${promptAvailable}. Enable chrome://flags/#prompt-api-for-gemini-nano and restart Chrome.`);
+        }
+        
+        const prompt =
+        `You are a resume tailoring assistant.\n` +
+        `Rewrite and reorganize the user's CV to match the job while staying 100% truthful.\n` +
+        `Emphasize relevant skills/experience, de-emphasize irrelevant parts.\n` +
+        `Output format: ${targetFormat ?? "plain-text"}\n\n` +
+        `JOB (JSON):\n${JSON.stringify(job)}\n\n` +
+        `CV (JSON):\n${JSON.stringify(cv)}\n\n` +
+        `Return only the final CV text.`;
+        
+        const text = await AI.Prompt.text(prompt, { timeoutMs: 35_000 });
+        const downloadName = "RoleAlign-CV.txt";
+        
+        log.info("GENERATE_TAILORED_CV ok", { chars: text.length });
+        return okRes(req, { text, downloadName });
+      } catch (e: any) {
+        log.error("GENERATE_TAILORED_CV failed", { msg: e?.message, stack: e?.stack });
+        return errorRes(req, "Internal", "Failed to generate tailored CV", { msg: e?.message });
+      }
     });
     
     addHandler("OPEN_CV_BUILDER", async (req: OpenCvBuilderReq) => {

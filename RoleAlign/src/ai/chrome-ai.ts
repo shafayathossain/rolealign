@@ -65,15 +65,25 @@ function cleanJsonFence(s: string) {
   // Remove markdown code fences more aggressively
   let cleaned = trimmed;
   
-  // Remove ```json at start and ``` at end
-  cleaned = cleaned.replace(/^```json\s*/i, '');
-  cleaned = cleaned.replace(/^```\s*/i, ''); // Also handle plain ```
-  cleaned = cleaned.replace(/\s*```\s*$/i, '');
+  // Handle multiline code fences
+  cleaned = cleaned.replace(/^```[a-z]*\n?/i, ''); // Remove ```json or ```anything at start
+  cleaned = cleaned.replace(/\n?```\s*$/i, ''); // Remove ``` at end
   
-  // Remove any remaining backticks
+  // Remove inline backticks
   cleaned = cleaned.replace(/^`+|`+$/g, '');
   
-  // Trim again
+  // Trim whitespace and newlines
+  cleaned = cleaned.trim();
+  
+  // If it still starts with backticks, remove them
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.substring(3);
+  }
+  if (cleaned.endsWith('```')) {
+    cleaned = cleaned.substring(0, cleaned.length - 3);
+  }
+  
+  // Final trim
   cleaned = cleaned.trim();
   
   try {
