@@ -1,13 +1,113 @@
 # RoleAlign — AI-powered CV ↔ Job Match Extension
 
-**CRITICAL: This extension requires Chrome's built-in AI APIs and operates in a strict AI-only mode with no fallbacks.**
+**⚠️ IMPORTANT CV GENERATION NOTICE:**
+**The AI-generated CV output is designed as a content draft, not a formatted document. You should copy the generated text and paste it into your own professionally formatted CV template. The extension focuses on intelligent content matching and tailoring, not document design.**
 
-One-time CV upload → continuous, private, on-page match scoring → one-click tailored CV generation.
+One-time CV upload → continuous, private, on-page match scoring → AI-powered CV content generation.
 
-## 🚀 Quick Start
+---
+
+## 📥 Installation (For End Users)
 
 ### Prerequisites
-- Node.js 18+ 
+- **Chrome browser** (version 127 or newer recommended)
+- **Chrome AI APIs enabled** (instructions below)
+
+### Step 1: Download the Extension
+
+1. Go to the [Releases page](../../releases)
+2. Download the latest `chrome-mv3.zip` file
+3. Extract the ZIP file to a folder on your computer
+
+### Step 2: Enable Chrome AI APIs
+
+**This extension requires Chrome's built-in AI features. Follow these steps carefully:**
+
+1. Open Chrome and navigate to these flags (copy-paste into address bar):
+   - `chrome://flags/#prompt-api-for-gemini-nano`
+   - `chrome://flags/#summarization-api-for-gemini-nano`
+   - `chrome://flags/#translation-api`
+
+2. Set each flag to **"Enabled"**
+
+3. **Required screenshots for reference:**
+
+   ![Prompt API](./assets/prompt.png)
+
+   ![Summarization API](./assets/summarization.png)
+
+   ![Writer/Rewriter API](./assets/writer.png)
+
+4. **Restart Chrome completely** (close all Chrome windows)
+
+5. **Verify AI is working** (open DevTools Console - F12):
+   ```javascript
+   console.log('AI available:', !!globalThis.ai?.languageModel);
+   await globalThis.ai?.languageModel?.capabilities();
+   ```
+
+### Step 3: Install the Extension
+
+1. Open Chrome and go to `chrome://extensions/`
+2. Enable **"Developer mode"** (toggle in top-right corner)
+3. Click **"Load unpacked"**
+4. Select the extracted `chrome-mv3` folder
+5. The RoleAlign icon should appear in your extensions toolbar
+
+---
+
+## 🎯 How to Use
+
+### 1. Upload Your CV (One Time)
+- Click the RoleAlign extension icon
+- Paste your CV text or upload a PDF
+- The extension will analyze and store it locally (never leaves your device)
+
+### 2. Browse Jobs
+- Visit LinkedIn or Indeed job postings
+- RoleAlign automatically analyzes each job and shows a match score badge
+- Click the badge to see detailed skill matches
+
+### 3. Generate Tailored CV Content
+- **Important:** The "Generate Tailored CV" button only appears when your match score is **80% or higher**
+- If you want to change this threshold, see [entrypoints/linkedin.content.ts:358](entrypoints/linkedin.content.ts#L358)
+- Click the button to generate job-specific CV content
+- **Copy the generated text** and paste it into your own formatted CV template
+- The output is optimized for content, not formatting
+
+---
+
+## 🔒 Privacy & Security
+
+- **100% on-device processing** - Your CV never leaves your computer
+- Uses Chrome's built-in AI (runs locally, no cloud servers)
+- Data stored only in `chrome.storage.local`
+- No external API calls or tracking
+
+---
+
+## 🚨 Troubleshooting
+
+**Extension not working?**
+1. Verify Chrome AI flags are enabled (see Step 2 above)
+2. Restart Chrome completely
+3. Check DevTools console for error messages
+
+**No "Generate CV" button?**
+- Your match score must be 80% or higher
+- To change this threshold, edit [entrypoints/linkedin.content.ts:358](entrypoints/linkedin.content.ts#L358)
+
+**CV generation not formatted properly?**
+- This is expected behavior - copy the text content and use your own CV template
+
+---
+
+# 👨‍💻 For Developers
+
+## Development Setup
+
+### Prerequisites
+- Node.js 18+
 - pnpm (recommended) or npm
 - **Chrome browser with AI flags enabled** (REQUIRED - no alternatives)
 
@@ -17,13 +117,12 @@ One-time CV upload → continuous, private, on-page match scoring → one-click 
 # 1. Install dependencies
 pnpm install
 
-# 2. Build extension (DO NOT use pnpm dev during development)
-pnpm build
-
-# 3. For development with AI APIs enabled
+# 2. For development with AI APIs enabled
 pnpm dev:ai
-
 # This automatically launches Chrome with AI flags enabled
+
+# 3. Build production version
+pnpm build
 ```
 
 ### Production Build
@@ -38,32 +137,6 @@ pnpm build:firefox
 pnpm zip:firefox
 ```
 
-### Enable Chrome AI APIs (CRITICAL REQUIREMENT)
-
-⚠️ **RoleAlign is 100% dependent on Chrome's built-in AI APIs. The extension will NOT work without these enabled.**
-
-**Option 1: Automated (Recommended for Development)**
-```bash
-pnpm dev:ai  # Automatically launches Chrome with AI flags enabled
-```
-
-**Option 2: Manual Setup**
-1. **Open Chrome flags:**
-   - `chrome://flags/#prompt-api-for-gemini-nano` → **Enabled**
-   - `chrome://flags/#summarization-api-for-gemini-nano` → **Enabled**
-   - `chrome://flags/#translation-api` → **Enabled**
-
-2. **Restart Chrome completely**
-
-3. **Verify AI availability:**
-   ```javascript
-   // In Chrome DevTools console
-   console.log('AI available:', !!globalThis.ai?.languageModel);
-   console.log('Prompt API status:', await globalThis.ai?.languageModel?.capabilities());
-   ```
-
-**Important:** When using command-line flags, the flags may still show as "Default" in chrome://flags, but they are active.
-
 ### Development Commands
 
 | Command | Description |
@@ -74,10 +147,11 @@ pnpm dev:ai  # Automatically launches Chrome with AI flags enabled
 | `pnpm zip` | Package for Chrome Web Store |
 | `pnpm dev:firefox` | Start development for Firefox (limited AI functionality) |
 
-⚠️ **Important:** Never use `pnpm dev` alone during development. Always use `pnpm dev:ai` to ensure AI APIs are available.
+⚠️ **Important:** Never use `pnpm dev` alone during development. Always use `pnpm dev:ai` or `pnpm build` for testing.
 
-### File Structure:
+### File Structure
 
+```
 RoleAlign/
 ├─ entrypoints/
 │  ├─ background/
@@ -113,12 +187,13 @@ RoleAlign/
 ├─ wxt.config.ts
 ├─ tsconfig.json
 └─ .gitignore
+```
 
 ## 🧪 Testing the Extension
 
 1. **Load extension in Chrome:**
-   - Extension auto-loads during `pnpm dev`
-   - Or manually: Chrome → Extensions → Load unpacked → `.output/chrome-mv3-dev`
+   - Extension auto-loads during `pnpm dev:ai`
+   - Or manually: Chrome → Extensions → Load unpacked → `.output/chrome-mv3`
 
 2. **Test CV upload:**
    - Click extension icon → Upload CV text/file
@@ -138,10 +213,10 @@ RoleAlign/
 
 ---
 
-# RoleAlign — AI-powered CV ↔ Job Match (On-Device)
+# RoleAlign — Technical Architecture
 
 **One-time CV upload → continuous, private, on-page match scoring → one-click tailored CV generation.**
-RoleAlign analyzes a user’s CV once, saves the structured result locally, and then automatically scores any supported job page the user visits (LinkedIn/Indeed). A badge shows the match %, and a button lets the user generate and download a tailored CV—**all on-device**.
+RoleAlign analyzes a user's CV once, saves the structured result locally, and then automatically scores any supported job page the user visits (LinkedIn/Indeed). A badge shows the match %, and a button lets the user generate and download a tailored CV—**all on-device**.
 
 ---
 
@@ -294,4 +369,3 @@ RoleAlign analyzes a user’s CV once, saves the structured result locally, and 
 4. **DO NOT use `pnpm dev`** - Always use `pnpm dev:ai` or `pnpm build` for testing
 5. **AI-first architecture** - Every text analysis operation must use Chrome AI APIs
 6. **Fail-fast approach** - If AI isn't available, don't attempt alternative methods
-
