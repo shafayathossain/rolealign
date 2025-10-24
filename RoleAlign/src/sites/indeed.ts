@@ -159,7 +159,7 @@ export const IndeedAdapter: SiteAdapter = {
       const postedAt = parseIndeedPostedAt([text(postedEl), ...chips.map(c => c.innerText || "")].join(" | "));
       const lastSeenAt = (input.now?.() ?? nowIso());
 
-      const inferredSkills = inferSkills([title, descriptionText].join("\n"));
+      const inferredSkills = await inferSkills([title, descriptionText].join("\n"));
 
       const url = input.url;
       const id = stableIdFrom(url, title, company);

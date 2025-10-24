@@ -189,18 +189,24 @@ export async function scoreAI(
 
   const prompt =
     `You are evaluating how well a candidate's CV matches a job description.\n` +
-    `Return STRICT JSON matching this schema: {score: 0..100, matched_terms: string[], missing_terms: string[], rationale: string}.\n` +
+    `Return STRICT JSON matching this schema: {score: 0..100, matched_terms: string[], missing_terms: string[], rationale: string}.\n\n` +
+    `CRITICAL RULES:\n` +
+    `- ONLY include skills/technologies explicitly mentioned in the job description\n` +
+    `- DO NOT add skills that are not directly stated in the job requirements\n` +
+    `- DO NOT infer or assume additional technologies based on company type or industry\n` +
+    `- Match skills semantically (e.g., "Git" matches "GitHub", "React Native" matches "React Native")\n` +
+    `- Be precise with skill names (e.g., "Java" ≠ "JavaScript", "scalable" ≠ "Scala")\n\n` +
     `Scoring guidance:\n` +
-    `- Consider exact and synonymous skill matches.\n` +
-    `- Heavily weight MUST-HAVE requirements.\n` +
-    `- Penalize missing critical certifications or years of experience if specified.\n` +
-    `- 100 means perfect fit; 0 means irrelevant.\n\n` +
+    `- Consider exact and synonymous skill matches from job description only\n` +
+    `- Heavily weight MUST-HAVE requirements from the job posting\n` +
+    `- Penalize missing critical skills explicitly listed in job requirements\n` +
+    `- 100 means perfect fit; 0 means irrelevant\n\n` +
     `Job requirements (markdown):\n${jobMarkdown}\n\n` +
     `CV skills (list):\n${cvSkills.join(", ")}\n\n` +
     (cvEvidence?.length
       ? `CV evidence (bullets/roles):\n${cvEvidence.slice(0, 50).join("\n")}\n\n`
       : ``) +
-    `Return ONLY JSON.`; // model will be constrained anyway
+    `Return ONLY JSON with skills mentioned in the job description.`;
 
   const out = await AI.Prompt.json<{
     score: number;

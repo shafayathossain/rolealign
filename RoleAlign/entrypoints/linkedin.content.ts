@@ -17,8 +17,28 @@ function isJobPage(url: string | any): boolean {
     log.warn('isJobPage received non-string URL', { url, type: typeof url });
     return false;
   }
-  return url.includes('/jobs/') && 
-         (url.includes('linkedin.com/jobs/') || url.includes('linkedin.com/') && url.includes('/jobs/'));
+  
+  // Must be a LinkedIn URL
+  if (!url.includes('linkedin.com')) {
+    return false;
+  }
+  
+  // Simple rule: if there's more than 5 characters after "/jobs", it's a specific job page
+  const jobsIndex = url.indexOf('/jobs');
+  if (jobsIndex === -1) {
+    return false;
+  }
+  
+  const afterJobs = url.substring(jobsIndex + 5); // Get everything after "/jobs"
+  const isJobPage = afterJobs.length > 5;
+  
+  log.debug(isJobPage ? 'URL matched - specific job page' : 'URL excluded - general jobs page', { 
+    url, 
+    afterJobs, 
+    afterJobsLength: afterJobs.length 
+  });
+  
+  return isJobPage;
 }
 
 // Cancel any ongoing analysis
@@ -500,7 +520,7 @@ async function analyzeJobPage(ctx: any, url: string) {
     // First wait for the job view container to exist
     const jobView = await waitForEl(ctx,
       ".jobs-search__job-details, .job-view-layout, .jobs-home__content, .jobs-search-results-list",
-      10_000,
+      5_000,
       250
     );
     
@@ -614,16 +634,21 @@ async function analyzeJobPage(ctx: any, url: string) {
       return;
     }
 
+    // Validate job analysis result
+    if (!result || !result.job) {
+      throw new Error("Job analysis failed: No job data returned from background script");
+    }
+
+    const job = result.job as any; // Cast to any since job analysis structure varies
     log.info("Job analysis completed", { 
-      title: result.job?.title, 
-      company: result.job?.company,
-      descriptionLength: result.job?.description?.length 
+      title: job?.title, 
+      company: job?.company,
+      descriptionLength: job?.description?.length 
     });
 
     // Get stored CV for scoring
     const cvResult = await send("content", "GET_CV", {}, { 
-      timeoutMs: 5_000,
-      abortSignal: currentAnalysis.abortController?.signal
+      timeoutMs: 5_000
     });
     
     // Check if cancelled after CV retrieval
@@ -639,7 +664,7 @@ async function analyzeJobPage(ctx: any, url: string) {
     }
 
     // Check if job description is large and needs chunking
-    const jobDescription = result.job?.description || '';
+    const jobDescription = job?.description || '';
     const chunks = chunkText(jobDescription, 2000);
     
     log.info(`Processing job description in ${chunks.length} chunk(s)`, {
@@ -656,13 +681,12 @@ async function analyzeJobPage(ctx: any, url: string) {
     // Enhanced scoring with AI semantic matching
     const scoreResult = await send("content", "SCORE_MATCH_ENHANCED", {
       cv: cvResult.cv,
-      job: result.job,
+      job: job,
       chunks: chunks,
       useAI: true,
       semanticMatching: true
     }, { 
-      timeoutMs: 120_000, // Longer timeout for chunked processing
-      abortSignal: currentAnalysis.abortController?.signal
+      timeoutMs: 120_000 // Longer timeout for chunked processing
     });
 
     // Check if cancelled after scoring
@@ -693,8 +717,8 @@ async function analyzeJobPage(ctx: any, url: string) {
     const enhancedMatchDetails = {
       ...scoreResult.matchDetails,
       jobInfo: {
-        title: result.job?.title,
-        company: result.job?.company,
+        title: job?.title,
+        company: job?.company,
         url: url
       }
     };

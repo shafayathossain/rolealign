@@ -461,13 +461,16 @@
             summarizer: summarizerAvailability
           });
           
-          // Require both APIs to be available for perfect AI-driven CV generation
-          if (promptAvailability !== 'readily' && promptAvailability !== 'available') {
-            throw new Error(`Prompt API not available: ${promptAvailability}. Please enable chrome://flags/#prompt-api-for-gemini-nano`);
+          // Strict availability check - only proceed if APIs are fully ready
+          const promptReady = promptAvailability === 'readily' || promptAvailability === 'available';
+          const summarizerReady = summarizerAvailability === 'readily' || summarizerAvailability === 'available';
+          
+          if (!promptReady) {
+            throw new Error(`Prompt API not available: ${promptAvailability}. CV generation requires AI. Please enable chrome://flags/#prompt-api-for-gemini-nano and restart Chrome.`);
           }
           
-          if (summarizerAvailability !== 'readily' && summarizerAvailability !== 'available') {
-            throw new Error(`Summarizer API not available: ${summarizerAvailability}. Please enable chrome://flags/#summarization-api-for-gemini-nano`);
+          if (!summarizerReady) {
+            throw new Error(`Summarizer API not available: ${summarizerAvailability}. CV generation requires AI. Please enable chrome://flags/#summarization-api-for-gemini-nano and restart Chrome.`);
           }
           
           // Mark APIs as available
@@ -479,119 +482,109 @@
             summarizer: this.aiAPIs.summarizer
           };
 
-          log.info("All required AI APIs are available", availableAPIs);
+          log.info("All required AI APIs are available for CV generation", availableAPIs);
           return availableAPIs;
 
         } catch (error) {
           log.error("AI APIs initialization failed", { error });
-          throw error;
+          throw error; // Fail fast - don't continue without AI
         }
       }
 
       async analyzeJobRequirements() {
         try {
-          const jobDescription = this.jobInfo.matchDetails?.jobDescriptionText || "";
-          const jobTitle = this.jobInfo.title;
-          const company = this.jobInfo.company;
-
-          // Both APIs are guaranteed to be available from initializeAIAPIs()
-
-          // Use Summarizer API to extract key requirements
-          const analysisPrompt = `Analyze this job posting for ${jobTitle} at ${company}:
-
-${jobDescription}
-
-Extract and summarize:
-1. Required technical skills and technologies
-2. Preferred qualifications and experience levels
-3. Key responsibilities and duties
-4. Industry-specific requirements
-5. Soft skills and competencies needed
-
-Focus on actionable requirements that can be matched against a CV.`;
-
-          const analysis = await AI.Summarize.text(analysisPrompt, {
-            type: 'key-points',
-            format: 'markdown',
-            length: 'medium'
-          });
-          
-          // Use Prompt API to structure the analysis
-          const structuredAnalysis = await AI.Prompt.text(`Based on this job analysis:
-
-${analysis}
-
-Extract and return a JSON object with:
-{
-  "keySkills": ["skill1", "skill2", ...],
-  "requirements": ["req1", "req2", ...],
-  "responsibilities": ["resp1", "resp2", ...],
-  "experienceLevel": "junior|mid|senior",
-  "industry": "industry_name",
-  "technologies": ["tech1", "tech2", ...]
-}
-
-Focus on specific, measurable requirements.`);
-
-          try {
-            return cleanJsonFence(structuredAnalysis);
-          } catch {
-            return { keySkills: [], requirements: [], responsibilities: [], experienceLevel: "mid", industry: "technology", technologies: [] };
+          // PRIORITY: Use existing analysis from matchDetails if available (most reliable)
+          if (this.jobInfo.matchDetails?.matchedSkills || this.jobInfo.matchDetails?.missingSkills) {
+            log.info("Using existing match analysis for skill extraction");
+            
+            const matchedSkills = this.jobInfo.matchDetails.matchedSkills || [];
+            const missingSkills = this.jobInfo.matchDetails.missingSkills || [];
+            
+            // Extract skill names from match objects
+            const extractSkillName = (skill) => {
+              if (typeof skill === 'string') return skill;
+              return skill.jobSkill || skill.userSkill || skill.skill || String(skill);
+            };
+            
+            const allJobSkills = [
+              ...matchedSkills.map(extractSkillName),
+              ...missingSkills.map(extractSkillName)
+            ].filter(skill => skill && skill.length > 1);
+            
+            return {
+              keySkills: allJobSkills.slice(0, 6),
+              requirements: ["Technical experience", "Problem-solving skills", "Team collaboration"],
+              responsibilities: ["Software development", "Code reviews", "Feature implementation"],
+              experienceLevel: this.inferExperienceLevel(this.jobInfo.title),
+              industry: "technology",
+              technologies: allJobSkills.slice(0, 4)
+            };
           }
+          
+          // SECONDARY: Use job analysis from jobInfo if available
+          if (this.jobInfo.matchDetails?.jobInfo?.inferredSkills) {
+            log.info("Using job analysis inferredSkills for skill extraction");
+            const keySkills = this.jobInfo.matchDetails.jobInfo.inferredSkills || [];
+            
+            return {
+              keySkills: keySkills.slice(0, 6),
+              requirements: ["Technical experience", "Problem-solving skills", "Team collaboration"],
+              responsibilities: ["Software development", "Code reviews", "Feature implementation"],
+              experienceLevel: this.inferExperienceLevel(this.jobInfo.title),
+              industry: "technology",
+              technologies: keySkills.slice(0, 4)
+            };
+          }
+          
+          // If no existing analysis is available, CV generation cannot proceed
+          log.error("No skill analysis available from job matching");
+          throw new Error("No job skill analysis available. CV generation requires prior job analysis from LinkedIn matching.");
 
         } catch (error) {
           log.error("Failed to analyze job requirements", { error });
-          return { keySkills: [], requirements: [], responsibilities: [], experienceLevel: "mid", industry: "technology", technologies: [] };
+          throw new Error("Cannot proceed with CV generation without job skill analysis. Please ensure you accessed CV builder from a successful job match.");
         }
       }
+
+
+      inferExperienceLevel(jobTitle) {
+        if (!jobTitle) return "mid";
+        const title = jobTitle.toLowerCase();
+        if (title.includes("senior") || title.includes("lead") || title.includes("principal")) return "senior";
+        if (title.includes("junior") || title.includes("entry") || title.includes("associate") || title.includes("trainee")) return "junior";
+        return "mid";
+      }
+
 
       async generateTailoredSummary(jobAnalysis) {
-        try {
-          const originalSummary = this.originalCV.summary || "";
-          const jobTitle = this.jobInfo.title;
-          const company = this.jobInfo.company;
+        const jobTitle = this.jobInfo.title;
+        const company = this.jobInfo.company;
 
-          // Prepare experience data for AI to analyze
-          const experienceData = this.originalCV.experience?.map(exp => ({
-            title: exp.title || exp.position,
-            company: exp.company,
-            startDate: exp.startDate || exp.start,
-            endDate: exp.endDate || exp.end,
-            current: exp.current || exp.endDate === 'Present' || exp.end === 'Present'
-          })) || [];
+        // AI-only generation - we've already validated APIs are available
+        const experienceData = this.originalCV.experience?.map(exp => ({
+          title: exp.title || exp.position,
+          company: exp.company,
+          startDate: exp.startDate || exp.start,
+          endDate: exp.endDate || exp.end
+        })) || [];
 
-          const prompt = `Write a concise professional summary for ${jobTitle} at ${company}.
+        const shortPrompt = `Professional summary for ${jobTitle}. Skills: ${jobAnalysis.keySkills?.slice(0, 3)?.join(', ')}. Experience: ${experienceData.length} roles. Write 2 sentences max.`;
 
-EXPERIENCE DATA TO ANALYZE:
-${experienceData.map(exp => `- ${exp.title} at ${exp.company} (${exp.startDate} - ${exp.endDate || 'Present'})`).join('\n')}
-
-REQUIRED SKILLS FOR ROLE: ${jobAnalysis.keySkills?.slice(0, 5)?.join(', ') || 'technical skills'}
-CANDIDATE'S SKILLS: ${this.originalCV.skills?.slice(0, 6)?.join(', ') || 'modern technologies'}
-
-CRITICAL INSTRUCTIONS:
-1. Calculate total years of professional experience from the experience data above
-2. Look at earliest start date to current date/latest end date
-3. From the experience data, calculate accurate years (e.g., 2018 to 2025 = 6+ years)
-
-SUMMARY REQUIREMENTS:
-- Exactly 2-3 sentences, 40-60 words total
-- Start with ACCURATE years of experience calculated from the data above
-- Include 3-4 most relevant skills that match the required skills
-- End with specific value proposition for the target role
-- Use exact calculated years, no approximation
-
-EXAMPLE FORMAT: "6+ years software engineer specializing in mobile development. Expert in iOS/Android with Swift, Kotlin, React Native. Built applications serving 50K+ users with focus on performance optimization."
-
-Return only the professional summary, no calculations or extra text.`;
-
-          const tailoredSummary = await AI.Prompt.text(prompt);
+        const tailoredSummary = await AI.Prompt.text(shortPrompt);
+        
+        // Validate response
+        if (tailoredSummary && tailoredSummary.length > 20 && tailoredSummary.length < 300) {
           return tailoredSummary;
-
-        } catch (error) {
-          log.error("Failed to generate tailored summary", { error });
-          throw error;
         }
+        
+        // If AI response is invalid, generate a basic one based on data
+        const experienceCount = this.originalCV.experience?.length || 0;
+        const years = experienceCount >= 6 ? "7+" : experienceCount >= 4 ? "5+" : "3+";
+        const skills = jobAnalysis.keySkills?.slice(0, 3)?.join(", ") || "modern technologies";
+        
+        return `${years} years experienced software engineer specializing in ${skills}. Proven track record in building scalable applications and delivering high-quality solutions for ${jobTitle} roles.`;
       }
+
 
       async enhanceExperience(jobAnalysis) {
         try {
@@ -647,6 +640,7 @@ Return only the professional summary, no calculations or extra text.`;
             const prompt = this.getExperiencePrompt(exp, seniorityLevel, careerStage, totalExperience, jobAnalysis);
 
             try {
+              // AI-only experience generation - APIs are already validated
               log.debug("Generating responsibilities with AI", { 
                 role: exp.title, 
                 seniority: seniorityLevel, 
@@ -664,15 +658,23 @@ Return only the professional summary, no calculations or extra text.`;
                        !line.toLowerCase().includes('generated') &&
                        !line.match(/^(note|remember|please)/i));
 
-              // FORCE 7+ bullet points - always use fallback for guaranteed count
-              log.info("Using fallback responsibilities for guaranteed 7+ points", { 
-                role: exp.title, 
-                company: exp.company,
-                seniorityLevel: seniorityLevel
-              });
-              
-              // Always use fallback system to guarantee 7+ role-appropriate bullet points
-              enhancedExp.responsibilities = this.generateFallbackResponsibilities(exp, seniorityLevel);
+              // Use AI results or generate minimal backup if AI response is poor
+              if (processedResponsibilities.length >= 5) {
+                enhancedExp.responsibilities = processedResponsibilities.slice(0, 8);
+                log.info("Successfully used AI-generated responsibilities", { 
+                  role: exp.title, 
+                  company: exp.company,
+                  bulletCount: enhancedExp.responsibilities.length 
+                });
+              } else {
+                // Generate minimal template-based responsibilities as backup
+                enhancedExp.responsibilities = this.generateMinimalResponsibilities(exp, seniorityLevel);
+                log.info("AI generated insufficient results, using minimal template", { 
+                  role: exp.title, 
+                  company: exp.company,
+                  aiGenerated: processedResponsibilities.length
+                });
+              }
 
               log.info("Successfully enhanced experience", { 
                 role: exp.title, 
@@ -688,7 +690,7 @@ Return only the professional summary, no calculations or extra text.`;
               });
               
               // Fallback: preserve original or generate basic responsibilities
-              enhancedExp.responsibilities = exp.responsibilities || this.generateFallbackResponsibilities(exp, seniorityLevel);
+              enhancedExp.responsibilities = exp.responsibilities || this.generateMinimalResponsibilities(exp, seniorityLevel);
             }
 
             enhancedExperience.push(enhancedExp);
@@ -717,49 +719,41 @@ Return only the professional summary, no calculations or extra text.`;
         }
       }
 
-      generateFallbackResponsibilities(exp, seniorityLevel) {
+      generateMinimalResponsibilities(exp, seniorityLevel) {
         const position = exp.title || exp.position || 'Developer';
-        const company = exp.company || 'Company';
         
+        // Generate only essential bullet points as backup when AI fails
         if (seniorityLevel === 'lead') {
           return [
-            `Led technical strategy and architecture decisions for ${company}'s development initiatives`,
-            `Managed cross-functional engineering teams to deliver scalable software solutions`,
-            `Established coding standards and development processes improving team productivity`,
-            `Collaborated with stakeholders to align technical roadmap with business objectives`,
-            `Mentored senior engineers and fostered knowledge sharing across development teams`,
-            `Designed system architecture supporting high-availability and performance requirements`,
-            `Drove adoption of modern development practices and emerging technologies`
+            `Led technical strategy and development initiatives`,
+            `Managed engineering teams and development processes`,
+            `Collaborated with stakeholders on technical roadmap`,
+            `Mentored engineers and fostered knowledge sharing`,
+            `Designed system architecture and technical solutions`
           ];
         } else if (seniorityLevel === 'senior') {
           return [
-            `Developed complex software features and systems as ${position}`,
-            `Optimized application performance and resolved critical technical challenges`,
-            `Mentored junior developers through code reviews and technical guidance`,
-            `Collaborated with product teams to implement user-facing features`,
-            `Implemented testing strategies and maintained high code quality standards`,
-            `Integrated third-party services and APIs to enhance application functionality`,
-            `Contributed to technical documentation and knowledge sharing initiatives`
+            `Developed complex software features and systems`,
+            `Optimized application performance and resolved technical challenges`,
+            `Mentored junior developers through code reviews`,
+            `Collaborated with product teams on feature implementation`,
+            `Maintained high code quality standards and testing strategies`
           ];
         } else if (seniorityLevel === 'mid') {
           return [
-            `Implemented software features and functionality for mobile and web applications`,
-            `Participated in code reviews and maintained development best practices`,
-            `Collaborated with team members to deliver project requirements on schedule`,
-            `Debugged and resolved software issues to improve application stability`,
-            `Contributed to testing efforts and quality assurance processes`,
-            `Learned and applied new technologies to enhance development capabilities`,
-            `Supported application maintenance and feature enhancement initiatives`
+            `Implemented software features for applications`,
+            `Participated in code reviews and development best practices`,
+            `Collaborated with team members on project requirements`,
+            `Debugged and resolved software issues`,
+            `Contributed to testing and quality assurance processes`
           ];
         } else { // junior/trainee
           return [
-            `Assisted in software development tasks under senior developer guidance`,
-            `Contributed to bug fixes and minor feature implementations`,
-            `Participated in code reviews to learn development best practices`,
-            `Supported testing activities and quality assurance processes`,
-            `Learned company development workflows and technical standards`,
-            `Collaborated with team members on assigned development tasks`,
-            `Gained hands-on experience with modern development tools and frameworks`
+            `Assisted in software development tasks`,
+            `Contributed to bug fixes and feature implementations`,
+            `Participated in code reviews and learning opportunities`,
+            `Supported testing activities and development processes`,
+            `Gained experience with development tools and technologies`
           ];
         }
       }

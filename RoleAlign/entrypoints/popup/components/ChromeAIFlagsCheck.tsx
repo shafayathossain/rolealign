@@ -25,9 +25,9 @@ export function ChromeAIFlagsCheck({ onFlagsValid }: { onFlagsValid: (valid: boo
       const status = { prompt, summarizer };
       setFlagStatus(status);
 
-      // Only 2 APIs are actually required for functionality
-      const isValid = (prompt === "available" || prompt === "downloadable") && 
-                     (summarizer === "available" || summarizer === "downloadable");
+      // Only accept fully available APIs for CV generation (more strict)
+      const isValid = (prompt === "available" || prompt === "readily") && 
+                     (summarizer === "available" || summarizer === "readily");
       
       onFlagsValid(isValid);
     } catch (error) {
@@ -65,7 +65,7 @@ export function ChromeAIFlagsCheck({ onFlagsValid }: { onFlagsValid: (valid: boo
   };
 
   const isRequired = (api: string) => true; // All APIs are required
-  const isApiValid = (status: string) => status === "available" || status === "downloadable";
+  const isApiValid = (status: string) => status === "available" || status === "readily";
 
   if (checking) {
     return (

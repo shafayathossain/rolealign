@@ -275,7 +275,7 @@ export const LinkedInAdapter: SiteAdapter = {
       // Skills
       let inferredSkills: string[] = [];
       try {
-        inferredSkills = inferSkills([title || "", descriptionText || ""].filter(Boolean).join("\n"));
+        inferredSkills = await inferSkills([title || "", descriptionText || ""].filter(Boolean).join("\n"));
       } catch (e) {
         console.warn("[LinkedIn Adapter] Failed to infer skills", e);
       }
@@ -390,9 +390,8 @@ export const LinkedInAdapter: SiteAdapter = {
         employmentType: employmentType || undefined,
         compensation: compensation && compensation.length ? compensation : undefined,
         tags: tags && tags.length ? tags : undefined,
-        description: descriptionText || descriptionMarkdown || "No description available",
+        descriptionText: descriptionText || "No description available",
         descriptionMarkdown: descriptionMarkdown || undefined,
-        descriptionText: descriptionText || "",
         descriptionHtml: descriptionHtml || undefined,
         inferredSkills: inferredSkills && inferredSkills.length ? inferredSkills : undefined,
         postedAt: postedAt || undefined,
@@ -425,7 +424,6 @@ export const LinkedInAdapter: SiteAdapter = {
           site: "linkedin",
           title: "LinkedIn Job (Parse Error)",
           company: "Company",
-          description: "Job description could not be parsed due to an error.",
           descriptionText: "Job description could not be parsed due to an error.",
           lastSeenAt: nowIso(),
           extras: { 

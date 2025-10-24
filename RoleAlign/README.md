@@ -1,5 +1,7 @@
 # RoleAlign — AI-powered CV ↔ Job Match Extension
 
+**CRITICAL: This extension requires Chrome's built-in AI APIs and operates in a strict AI-only mode with no fallbacks.**
+
 One-time CV upload → continuous, private, on-page match scoring → one-click tailored CV generation.
 
 ## 🚀 Quick Start
@@ -7,7 +9,7 @@ One-time CV upload → continuous, private, on-page match scoring → one-click 
 ### Prerequisites
 - Node.js 18+ 
 - pnpm (recommended) or npm
-- Chrome browser with AI flags enabled
+- **Chrome browser with AI flags enabled** (REQUIRED - no alternatives)
 
 ### Installation & Development
 
@@ -15,11 +17,13 @@ One-time CV upload → continuous, private, on-page match scoring → one-click 
 # 1. Install dependencies
 pnpm install
 
-# 2. Start development server
-pnpm dev
+# 2. Build extension (DO NOT use pnpm dev during development)
+pnpm build
 
-# 3. Open Chrome to load the extension
-# The browser will open automatically with the extension loaded
+# 3. For development with AI APIs enabled
+pnpm dev:ai
+
+# This automatically launches Chrome with AI flags enabled
 ```
 
 ### Production Build
@@ -29,15 +33,21 @@ pnpm dev
 pnpm build
 pnpm zip
 
-# Build for Firefox
+# Build for Firefox (limited functionality)
 pnpm build:firefox
 pnpm zip:firefox
 ```
 
-### Enable Chrome AI APIs (Required)
+### Enable Chrome AI APIs (CRITICAL REQUIREMENT)
 
-RoleAlign uses Chrome's built-in AI APIs. Enable these flags:
+⚠️ **RoleAlign is 100% dependent on Chrome's built-in AI APIs. The extension will NOT work without these enabled.**
 
+**Option 1: Automated (Recommended for Development)**
+```bash
+pnpm dev:ai  # Automatically launches Chrome with AI flags enabled
+```
+
+**Option 2: Manual Setup**
 1. **Open Chrome flags:**
    - `chrome://flags/#prompt-api-for-gemini-nano` → **Enabled**
    - `chrome://flags/#summarization-api-for-gemini-nano` → **Enabled**
@@ -45,22 +55,26 @@ RoleAlign uses Chrome's built-in AI APIs. Enable these flags:
 
 2. **Restart Chrome completely**
 
-3. **Test AI availability** (optional):
+3. **Verify AI availability:**
    ```javascript
    // In Chrome DevTools console
    console.log('AI available:', !!globalThis.ai?.languageModel);
-   await globalThis.ai?.languageModel?.canCreate();
+   console.log('Prompt API status:', await globalThis.ai?.languageModel?.capabilities());
    ```
+
+**Important:** When using command-line flags, the flags may still show as "Default" in chrome://flags, but they are active.
 
 ### Development Commands
 
 | Command | Description |
 |---------|-------------|
-| `pnpm dev` | Start development with live reload |
-| `pnpm dev:firefox` | Start development for Firefox |
+| `pnpm dev:ai` | **Recommended:** Build extension and launch Chrome with AI APIs enabled |
 | `pnpm build` | Create production build |
 | `pnpm compile` | Type check without emitting |
 | `pnpm zip` | Package for Chrome Web Store |
+| `pnpm dev:firefox` | Start development for Firefox (limited AI functionality) |
+
+⚠️ **Important:** Never use `pnpm dev` alone during development. Always use `pnpm dev:ai` to ensure AI APIs are available.
 
 ### File Structure:
 
@@ -136,57 +150,61 @@ RoleAlign analyzes a user’s CV once, saves the structured result locally, and 
 * **Upload once, use everywhere**
 
   * User submits CV once (text/PDF → text).
-  * Extension parses & **saves analyzed CV** (structured JSON) locally.
+  * Extension uses **Chrome AI** to parse & **save analyzed CV** (structured JSON) locally.
   * Future visits to job pages instantly re-use the saved analysis—no re-upload.
-* **Auto score on job pages**
+* **AI-powered job analysis**
 
-  * When the user lands on a supported job page, RoleAlign parses the posting and **pops a badge** (top-right) with a **match %**.
-  * Click the badge to open details (matched/missing skills, rationale).
-* **One-click tailored CV**
+  * When the user lands on a supported job page, RoleAlign uses **Chrome AI** to parse the posting and **pops a badge** (top-right) with a **match %**.
+  * Click the badge to open details (matched/missing skills, AI-generated rationale).
+* **One-click tailored CV generation**
 
   * From the details panel, the user can **Generate Tailored CV**.
-  * Output is generated locally and offered as a **download** (Markdown by default; can extend to PDF/DOCX).
-* **On-device AI (privacy by default)**
+  * **Requires Chrome AI** - no fallback methods available.
+  * Output is generated locally using AI and offered as a **download** (Markdown format).
+* **Strict AI-only architecture**
 
-  * Chrome built-in AI (Prompt/Summarizer/Translator).
-  * If device lacks on-device models, we **degrade gracefully** to deterministic scoring; no data leaves the device.
+  * **100% dependent on Chrome built-in AI** (Prompt/Summarizer APIs).
+  * **NO fallback mechanisms** - if AI is unavailable, features will not work.
+  * All skill extraction, job analysis, and CV generation powered by AI.
 * **Zero server dependency**
 
   * Storage via `chrome.storage.local` (namespaced & versioned).
-  * No external APIs required.
+  * No external APIs required - completely on-device processing.
 
 ---
 
 ## 🧭 User Flow (What the user experiences)
 
 1. **Install extension** → open popup → **Upload CV** (paste text or drop PDF).
-2. Extension extracts structured data (name, skills, experience, etc.) and **stores it locally**.
+2. Extension uses **Chrome AI** to extract structured data (name, skills, experience, etc.) and **stores it locally**.
 3. User browses LinkedIn/Indeed job pages:
 
-   * A **match badge** appears with **Match: 0–100%**.
-   * Clicking it opens a panel showing **matched/missing skills** and an explanation.
-4. User clicks **Generate Tailored CV** → extension produces a job-specific CV on-device → **Download**.
+   * A **match badge** appears with **Match: 0–100%** (powered by AI analysis).
+   * Clicking it opens a panel showing **AI-analyzed matched/missing skills** and reasoning.
+4. User clicks **Generate Tailored CV** → extension uses **Chrome AI** to produce a job-specific CV on-device → **Download**.
 
-> The CV is parsed **once** and cached. If the user updates their CV, the extension detects a content hash change, re-parses, and updates the cache automatically.
+> ⚠️ **All steps require Chrome AI to be available.** The CV is parsed **once** using AI and cached. If the user updates their CV, the extension detects a content hash change, re-parses with AI, and updates the cache automatically.
 
 ---
 
-## 🧱 How it’s implemented (at a glance)
+## 🧱 How it's implemented (at a glance)
 
 * **CV Lifecycle**
 
-  * `popup/App.tsx` → user input → `AI.Prompt.extractCv()`
+  * `popup/App.tsx` → user input → `AI.Prompt.extractCv()` **(Chrome AI required)**
   * Persisted to `kv.set('cv.current', { data, meta: { version, hash, updatedAt } })`
-  * Background keeps **only the structured result**; raw text can be discarded (configurable).
+  * Background keeps **only the AI-structured result**; raw text can be discarded (configurable).
 * **Job Page Lifecycle**
 
   * Content script (site adapter) extracts normalized job text + metadata.
-  * Sends `ANALYZE_JOB` → background summarizes requirements (on-device) → returns markdown “requirements”.
-  * Background computes score: `computeScore({ cvSkills, jobMarkdown, cvEvidence })` (deterministic + AI blend).
-  * Content script **mounts a badge** with the score; clicking opens details.
+  * Sends `ANALYZE_JOB` → background uses **Chrome AI** to analyze requirements → returns structured job data.
+  * Background computes score: **AI-powered semantic matching** with enhanced skill extraction.
+  * Content script **mounts a badge** with the AI-computed score; clicking opens AI-generated details.
 * **Tailored CV Generation**
 
-  * Content → `GENERATE_TAILORED_CV` → background uses on-device Prompt to rewrite user CV for the job → returns text → content offers **download**.
+  * Content → `GENERATE_TAILORED_CV` → background uses **Chrome AI Prompt API** to rewrite user CV for the job → returns text → content offers **download**.
+
+> **Critical:** All AI operations have strict timeouts and **no fallback mechanisms**. If Chrome AI is unavailable, these features will fail gracefully with clear error messages.
 
 ---
 
@@ -238,26 +256,42 @@ RoleAlign analyzes a user’s CV once, saves the structured result locally, and 
 
 ## ⚙️ Settings that affect the flow
 
-* **Auto badge:** if off, content script doesn’t show the badge automatically; user can open the popup and click “Score this page.”
-* **Keep raw CV:** for privacy, default is **false** (discard raw text, keep only structured result).
-* **Scoring method:** `deterministic` | `ai` | `blend` (default `blend`).
+* **Auto badge:** if off, content script doesn't show the badge automatically; user can open the popup and click "Score this page."
+* **Keep raw CV:** for privacy, default is **false** (discard raw text, keep only AI-structured result).
+* **Scoring method:** Currently **AI-only** - no deterministic fallbacks available.
+* **AI Dependencies:** All features require Chrome AI APIs to be enabled and available.
 
 ---
 
 ## 🔐 Privacy Notes
 
-* The analyzed CV JSON and tailored CV are stored **locally**; nothing leaves the device.
-* If on-device models aren’t available, AI features gracefully degrade (no fallback to cloud).
+* The AI-analyzed CV JSON and tailored CV are stored **locally**; nothing leaves the device.
+* **Chrome built-in AI models** run entirely on-device - no cloud communication.
+* If on-device AI models aren't available, features **fail completely** (no cloud fallbacks).
 * Host permissions limited to supported job sites; content scripts are **shadow-DOM isolated**.
+* All skill extraction and job analysis happens locally using Chrome AI APIs.
 
 ---
 
 ## 🧪 QA Checklist (for this flow)
 
-* [ ] Upload CV once → refresh browser → CV remains available (storage OK).
-* [ ] Navigate several LinkedIn/Indeed job pages → badge shows without re-upload.
-* [ ] Toggle **Auto badge** off → badge no longer appears automatically; scoring via popup still works.
-* [ ] Generate tailored CV for at least two different jobs → outputs differ appropriately.
-* [ ] Disable built-in AI (simulate unavailability) → deterministic score still appears; tailored CV button can show a friendly “AI unavailable” note.
-* [ ] Update CV contents → hash changes → CV gets re-parsed and results refresh.
+* [ ] **AI Availability Check:** Verify Chrome AI APIs are enabled before testing any functionality.
+* [ ] Upload CV once → refresh browser → AI-analyzed CV remains available (storage OK).
+* [ ] Navigate several LinkedIn/Indeed job pages → AI-powered badge shows without re-upload.
+* [ ] Toggle **Auto badge** off → badge no longer appears automatically; AI scoring via popup still works.
+* [ ] Generate tailored CV for at least two different jobs → AI outputs differ appropriately.
+* [ ] **AI Failure Test:** Disable built-in AI → all features should fail gracefully with clear error messages.
+* [ ] Update CV contents → hash changes → CV gets re-analyzed with AI and results refresh.
+* [ ] **Skill Extraction Quality:** Verify AI extracts only legitimate technical skills, not random words.
+
+## 🚨 Critical Development Restrictions
+
+**These restrictions must be followed in all future development:**
+
+1. **NO fallback mechanisms** - If Chrome AI is unavailable, features must fail gracefully
+2. **NO hardcoded skill arrays** - All skill extraction must be AI-driven and dynamic
+3. **NO regex-based skill matching** - Only AI-powered skill analysis is permitted
+4. **DO NOT use `pnpm dev`** - Always use `pnpm dev:ai` or `pnpm build` for testing
+5. **AI-first architecture** - Every text analysis operation must use Chrome AI APIs
+6. **Fail-fast approach** - If AI isn't available, don't attempt alternative methods
 

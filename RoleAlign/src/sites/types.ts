@@ -187,42 +187,58 @@ export function asMarkdownFromContainer(root: Element): string {
     .trim();
 }
 
-/** Best-effort skill extraction (fast heuristic). */
-const SKILL_DICTIONARY = [
-  // Core CS / languages
-  "python","java","javascript","typescript","c","c++","c#","go","rust","ruby","php","kotlin","swift","scala","sql",
-  // Web/FE
-  "react","next.js","nextjs","vue","nuxt","angular","svelte","rxjs","redux","tailwind","webpack","vite","rollup",
-  // BE
-  "node","express","spring","django","flask","fastapi",".net",".net core","laravel","rails",
-  // Data/ML/AI
-  "pandas","numpy","scikit-learn","tensorflow","pytorch","ml","machine learning","llm","rag","nlp","opencv",
-  // Cloud/DevOps
-  "aws","gcp","azure","kubernetes","docker","terraform","ansible","jenkins","gitlab ci","github actions",
-  // Databases
-  "postgres","mysql","mariadb","sqlite","mongodb","redis","elasticsearch","snowflake","bigquery","redshift",
-  // Mobile
-  "android","ios","react native","flutter",
-  // Testing
-  "jest","mocha","chai","pytest","playwright","cypress",
-  // Other
-  "graphql","grpc","rest","http","oauth","jwt","linux","bash","shell","jira","jira","confluence"
-];
+/**
+ * AI-based skill extraction from job text.
+ * Returns a promise that resolves to skills found in the text.
+ */
+export async function inferSkills(textBody: string): Promise<string[]> {
+  try {
+    // Use Chrome AI to extract skills from job text
+    const { AI } = await import("../ai/chrome-ai");
+    
+    const prompt = 
+      `You are an expert technical recruiter with 10+ years of experience. Your job is to extract ONLY legitimate technical skills from job descriptions. You MUST be extremely precise and exclude any word that is not a real technical skill.\n\n` +
+      `CRITICAL INSTRUCTIONS - FOLLOW EXACTLY:\n\n` +
+      `✅ INCLUDE ONLY these types of technical skills:\n` +
+      `• Programming languages: JavaScript, Python, Java, C++, Kotlin, Swift, TypeScript, etc.\n` +
+      `• Frameworks/Libraries: React, Angular, Vue, Django, Spring Boot, Express, etc.\n` +
+      `• Databases: MySQL, PostgreSQL, MongoDB, Redis, Cassandra, etc.\n` +
+      `• Cloud platforms: AWS, Azure, Google Cloud, etc.\n` +
+      `• DevOps tools: Docker, Kubernetes, Jenkins, GitLab CI, etc.\n` +
+      `• Version control: Git, GitHub, GitLab, etc.\n` +
+      `• Development methodologies: Agile, Scrum, Kanban, TDD, etc.\n` +
+      `• Technical architectures: REST, GraphQL, Microservices, etc.\n\n` +
+      `❌ YOU MUST ABSOLUTELY EXCLUDE:\n` +
+      `• ANY generic English words: "About", "Our", "Role", "Join", "You", "This", "Your", "Experience", "Strong", "Understanding", etc.\n` +
+      `• ANY company names: "Wrike", "Google", "Microsoft", "Apple", etc.\n` +
+      `• ANY job titles: "Senior", "Junior", "Lead", "Manager", "Engineer", "Developer", etc.\n` +
+      `• ANY location names: "San Diego", "Prague", "Dublin", "Tallinn", etc.\n` +
+      `• ANY person names: "Aleksandar Chernev", etc.\n` +
+      `• ANY business terms: "MVP", "KPI", "ROI", "Team Dynamics", etc.\n` +
+      `• ANY benefits: "Health", "Life", "Fitness", "Parental", etc.\n` +
+      `• ANY common words: "Built", "Smart", "Dedicated", "Values", "Customer", etc.\n` +
+      `• ANY pronouns or articles: "We", "They", "The", "A", "An", etc.\n\n` +
+      `EXAMPLES OF WHAT TO EXTRACT: ["JavaScript", "React", "Node.js", "MongoDB", "AWS", "Docker", "Git", "Agile"]\n` +
+      `EXAMPLES OF WHAT NOT TO EXTRACT: ["About", "Our", "Role", "Join", "Experience", "Strong", "Team", "Health"]\n\n` +
+      `TRIPLE-CHECK your output. If you see ANY word that sounds like normal English rather than a technical skill, REMOVE IT.\n\n` +
+      `Job description:\n${textBody}\n\n` +
+      `Return ONLY technical skills as a JSON array: ["skill1", "skill2"]`;
 
-export function inferSkills(textBody: string): string[] {
-  const body = ` ${textBody.toLowerCase()} `;
-  const hits = new Set<string>();
+    const skills = await AI.Prompt.json<string[]>(prompt, {
+      schema: {
+        type: "array",
+        items: { type: "string" }
+      },
+      timeoutMs: 30_000
+    });
 
-  for (const token of SKILL_DICTIONARY) {
-    // word-boundary-ish match, but allow tokens like "c++" and ".net"
-    const safe = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const re = new RegExp(`(^|[^a-z0-9+.])(${safe})([^a-z0-9+. ]|$)`, "i");
-    if (re.test(body)) hits.add(token);
+    return Array.from(new Set(skills.map(s => s.trim()))).filter(Boolean).sort();
+  } catch (error) {
+    console.warn("[inferSkills] AI extraction failed, returning empty array:", error);
+    
+    // Return empty array if AI is unavailable - don't try to parse manually
+    return [];
   }
-
-  // Simple normalization: next.js → nextjs
-  const norm = Array.from(hits).map((s) => (s === "next.js" ? "nextjs" : s));
-  return Array.from(new Set(norm)).sort();
 }
 
 /** Parse money ranges from free text. Very permissive and multi-locale tolerant. */
@@ -249,8 +265,8 @@ export function extractCompensation(raw: string): MoneyRange[] {
     ] as any;
 
     const currency = normalizeCurrency(currSym || symOnly);
-    const min = parseCompNumber(n1, mult1);
-    const max = n2 ? parseCompNumber(n2, mult2) : undefined;
+    const min = parseCompNumber(n1, mult1) ?? undefined;
+    const max = n2 ? (parseCompNumber(n2, mult2) ?? undefined) : undefined;
     const period = normalizePeriod(periodRaw);
 
     if (!min && !max) continue;
