@@ -29,7 +29,6 @@ One-time CV upload → continuous, private, on-page match scoring → AI-powered
 1. Open Chrome and navigate to these flags (copy-paste into address bar):
    - `chrome://flags/#prompt-api-for-gemini-nano`
    - `chrome://flags/#summarization-api-for-gemini-nano`
-   - `chrome://flags/#translation-api`
 
 2. Set each flag to **"Enabled"**
 
