@@ -42,11 +42,22 @@ One-time CV upload → continuous, private, on-page match scoring → AI-powered
 
 4. **Restart Chrome completely** (close all Chrome windows)
 
-5. **Verify AI is working** (open DevTools Console - F12):
+5. **⏳ IMPORTANT: Wait for AI Model Download**
+
+   **After enabling the flags for the first time, Chrome needs to download and install the Gemini Nano AI model in the background. This can take 5-30 minutes depending on your internet connection.**
+
+   - The extension **will not work immediately** after enabling flags
+   - Chrome downloads the model silently in the background
+   - You can continue browsing while the model downloads
+   - There is no progress indicator - be patient!
+
+6. **Verify AI is working** (open DevTools Console - F12):
    ```javascript
    console.log('AI available:', !!globalThis.ai?.languageModel);
    await globalThis.ai?.languageModel?.capabilities();
    ```
+
+   If you see `"readily"` in the capabilities output, the AI is ready to use!
 
 ### Step 3: Install the Extension
 
