@@ -740,9 +740,13 @@ Text: ${text}`;
           } else {
             // Fallback to regex patterns
             const jobDescPatterns = [
-            // PRIORITY: Article container pattern (works best with current LinkedIn structure)
+            // HIGHEST PRIORITY: New LinkedIn structure with jobs-description__container article and nested divs
+            // This captures the entire article including deeply nested spans
             /<article[^>]*class="[^"]*jobs-description__container[^"]*"[^>]*>([\s\S]*?)<\/article>/i,
-            
+
+            // NEW: Target divs with jobs-box__html-content class (contains deeply nested content)
+            /<div[^>]*class="[^"]*jobs-box__html-content[^"]*"[^>]*id="job-details"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/i,
+
             // Most specific div patterns - handle nested div structures properly
             // NEW: Target the exact structure with id="job-details" and jobs-box__html-content class
             /<div[^>]*id="job-details"[^>]*class="[^"]*jobs-box__html-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
@@ -751,7 +755,7 @@ Text: ${text}`;
             /<div[^>]*class="[^"]*jobs-description-content__text[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
             /<div[^>]*class="[^"]*jobs-description__container[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
             /<section[^>]*class="[^"]*jobs-description[^"]*"[^>]*>([\s\S]*?)<\/section>/i,
-            
+
             // ID-based patterns (more reliable)
             /<div[^>]*id="job-details"[^>]*>([\s\S]*?)<\/div>/i,
             
@@ -785,9 +789,12 @@ Text: ${text}`;
                 matchedLength: trimmedContent.length,
                 matchedPreview: trimmedContent.substring(0, 200) + "...",
                 patternDescription: [
-                  "jobs-box__html-content or job-details div",
-                  "jobs-description-content__text div", 
-                  "jobs-description__container article",
+                  "jobs-description__container article (NEW: captures nested spans)",
+                  "jobs-box__html-content div with nested close",
+                  "job-details + jobs-box__html-content div",
+                  "jobs-box__html-content + job-details div",
+                  "jobs-box__html-content OR job-details div",
+                  "jobs-description-content__text div",
                   "jobs-description__container div",
                   "jobs-description section",
                   "job-details id div",
