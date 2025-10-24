@@ -1,7 +1,10 @@
 # RoleAlign — AI-powered CV ↔ Job Match Extension
 
-**⚠️ IMPORTANT CV GENERATION NOTICE:**
-**The AI-generated CV output is designed as a content draft, not a formatted document. You should copy the generated text and paste it into your own professionally formatted CV template. The extension focuses on intelligent content matching and tailoring, not document design.**
+**⚠️ IMPORTANT NOTICES:**
+
+**CV Generation:** The AI-generated CV output is designed as a content draft, not a formatted document. You should copy the generated text and paste it into your own professionally formatted CV template. The extension focuses on intelligent content matching and tailoring, not document design.
+
+**Supported Sites:** Currently works on **LinkedIn only**. Indeed support is in development.
 
 One-time CV upload → continuous, private, on-page match scoring → AI-powered CV content generation.
 
@@ -64,7 +67,7 @@ One-time CV upload → continuous, private, on-page match scoring → AI-powered
 - The extension will analyze and store it locally (never leaves your device)
 
 ### 2. Browse Jobs
-- Visit LinkedIn or Indeed job postings
+- Visit **LinkedIn** job postings (Indeed support coming soon)
 - RoleAlign automatically analyzes each job and shows a match score badge
 - Click the badge to see detailed skill matches
 
@@ -131,10 +134,6 @@ pnpm build
 # Build for Chrome Web Store
 pnpm build
 pnpm zip
-
-# Build for Firefox (limited functionality)
-pnpm build:firefox
-pnpm zip:firefox
 ```
 
 ### Development Commands
@@ -145,7 +144,6 @@ pnpm zip:firefox
 | `pnpm build` | Create production build |
 | `pnpm compile` | Type check without emitting |
 | `pnpm zip` | Package for Chrome Web Store |
-| `pnpm dev:firefox` | Start development for Firefox (limited AI functionality) |
 
 ⚠️ **Important:** Never use `pnpm dev` alone during development. Always use `pnpm dev:ai` or `pnpm build` for testing.
 
@@ -210,6 +208,25 @@ RoleAlign/
 - **Hot Reload**: Changes auto-reload the extension
 - **Logging**: Comprehensive logging for debugging
 - **Chrome MV3**: Uses latest Manifest V3 architecture
+
+### Site Support Status
+
+- ✅ **LinkedIn**: Fully supported
+- 🚧 **Indeed**: In development (adapter exists in [src/sites/indeed.ts](src/sites/indeed.ts), needs content script implementation)
+
+To add Indeed support, create `entrypoints/indeed.content.ts` following the pattern in [entrypoints/linkedin.content.ts](entrypoints/linkedin.content.ts).
+
+### AI Prompts Location
+
+All AI prompts can be customized to improve accuracy:
+
+- **CV Parsing**: [src/ai/chrome-ai.ts:325](src/ai/chrome-ai.ts#L325) - Extract structured data from CV
+- **Job Matching**: [src/match/score.ts:191](src/match/score.ts#L191) - Evaluate CV-job compatibility
+- **CV Tailoring**: [src/cv/tailoring-engine.ts:192](src/cv/tailoring-engine.ts#L192) - Generate tailored CV content
+- **Summary Generation**: [src/cv/tailoring-engine.ts:192](src/cv/tailoring-engine.ts#L192) - Create professional summaries
+- **Skills Optimization**: [src/cv/tailoring-engine.ts:376](src/cv/tailoring-engine.ts#L376) - Reorder/enhance skills list
+
+Feel free to experiment with prompt engineering to improve output quality!
 
 ---
 
@@ -340,8 +357,8 @@ RoleAlign analyzes a user's CV once, saves the structured result locally, and th
 
 ## 🔐 Privacy Notes
 
-* The AI-analyzed CV JSON and tailored CV are stored **locally**; nothing leaves the device.
-* **Chrome built-in AI models** run entirely on-device - no cloud communication.
+* The AI-analyzed CV JSON and tailored CV are stored **locally**.
+* **Chrome built-in AI models** run on-device.
 * If on-device AI models aren't available, features **fail completely** (no cloud fallbacks).
 * Host permissions limited to supported job sites; content scripts are **shadow-DOM isolated**.
 * All skill extraction and job analysis happens locally using Chrome AI APIs.
